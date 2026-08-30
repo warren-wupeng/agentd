@@ -82,6 +82,14 @@ Parallelizable: 4+5+6 can proceed together once 3 lands; 8 any time after 1.
 - 2026-08-30: golangci-lint installed from source in CI (pinned v1.64.8).
   Prebuilt release binaries are compiled with older Go and refuse a go1.25
   target. go-arch-lint v1.18.0 pinned for the same reason.
+- 2026-08-30: parallel-test port locks must be claimed with link(2), not
+  O_CREATE|O_EXCL + write — the latter has an empty-content window between
+  create and write that a parallel scanner reads as "stale lock" and
+  steals. Two binaries then share a port AND a data dir → postmaster.pid
+  FATAL. Observed on CI, not locally; loaded 2-core runners widen the
+  window. Lock content = owner PID; a lock with a live owner is never
+  stolen (a fresh claimant's postgres simply isn't listening yet, which
+  port probing cannot distinguish from a crashed run).
 
 ## Progress log
 
@@ -96,3 +104,9 @@ Parallelizable: 4+5+6 can proceed together once 3 lands; 8 any time after 1.
   caught by tests: agentderr.Internal wrapping nil on success paths
   (rows.Err/tx.Commit returned as error unconditionally) — fixed at 5
   call sites. Task 8 (CI) pending push.
+- 2026-08-30: **M1 done.** Pushed to main (0cd55d1 + cdd247e + cd553b4);
+  CI green (test 28s, lint 32s). CI taught us two things local didn't:
+  (1) repo1.maven.org rate-limits CI egress → actions/cache on
+  ~/.embedded-postgres-go; (2) the link(2) lesson in the decision log —
+  the empty-content window in O_EXCL lock creation is real on a loaded
+  2-core runner.
