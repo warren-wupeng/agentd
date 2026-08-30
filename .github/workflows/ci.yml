@@ -15,6 +15,12 @@ jobs:
           go-version: "1.25"
           cache: true
       - run: go vet ./...
+      # Cache the embedded-postgres binary cache: first test run downloads
+      # PG from repo1.maven.org, which occasionally rate-limits CI egress.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.embedded-postgres-go
+          key: embedded-pg-v16-${{ runner.os }}
       # Tests boot their own embedded Postgres — no service container.
       - run: go test ./...
 
