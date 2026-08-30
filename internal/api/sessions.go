@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/agentderr"
@@ -33,6 +35,16 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 	harness := req.Harness
 	if harness == "" {
 		harness = "native"
+	}
+	if len(h.harnesses) > 0 && !h.harnesses[harness] {
+		known := make([]string, 0, len(h.harnesses))
+		for name := range h.harnesses {
+			known = append(known, name)
+		}
+		writeErr(w, agentderr.InvalidInput(
+			"unknown harness "+harness,
+			fmt.Sprintf("harnesses registered in this process: %s (see ADR-004)", strings.Join(known, ", "))))
+		return
 	}
 
 	sess, _, err := h.st.CreateSession(r.Context(), req.AgentID, req.AgentVersion, harness)

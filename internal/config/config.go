@@ -28,6 +28,7 @@ type Config struct {
 	SandboxBase  string
 	LoopMaxSteps int
 	LoopRetries  int
+	OpenCodeURL  string
 }
 
 // Load reads and validates the environment.
@@ -96,6 +97,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		DatabaseURL:  dbURL,
+		OpenCodeURL:  os.Getenv("OPENCODE_URL"),
 		HTTPAddr:     addr,
 		LogLevel:     level,
 		ModelBaseURL: os.Getenv("MODEL_BASE_URL"),

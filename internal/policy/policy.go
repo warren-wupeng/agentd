@@ -1,7 +1,7 @@
 // Package policy decides whether a tool call may run. Verdicts are
 // recorded on tool.requested events — an unlogged decision is a decision
-// that never happened (G3's audit half). M2 ships allow/deny; `ask`
-// (escalation to a human) lands with the escalation flow in M3.
+// that never happened (G3's audit half). `ask` parks the turn at
+// requires_action; a human answers via an ordinary message.user.
 package policy
 
 import (
@@ -16,6 +16,8 @@ type Decision string
 const (
 	Allow Decision = "allow"
 	Deny  Decision = "deny"
+	// Ask parks the turn for a human decision (requires_action).
+	Ask Decision = "ask"
 )
 
 // Verdict is one decision plus its reason — the reason is what the model
@@ -32,15 +34,18 @@ type Engine interface {
 	Check(toolName string, input json.RawMessage) Verdict
 }
 
-// Static is the M2 engine: per-tool defaults from the tool itself, plus
-// a hard bash denylist. Honest about scope — this is plumbing with a
-// real deny path, not a governance story.
+// Static is the M4 engine: hard denylist for the unforgivable, ask-list
+// for actions with side effects beyond the sandbox. Honest about scope —
+// plumbing with real deny/ask paths, not a governance story.
 type Static struct{}
 
 func NewStatic() *Static { return &Static{} }
 
 // sudoRe: sudo in command position (start of command or after ; && ||).
 var sudoRe = regexp.MustCompile(`(^|[;&|]\s*)sudo\b`)
+
+// askRe: outbound, irreversible side effects — a human should nod.
+var askRe = regexp.MustCompile(`(^|[;&|]\s*)git\s+push\b`)
 
 func (s *Static) Check(toolName string, input json.RawMessage) Verdict {
 	if toolName != "bash" {
@@ -57,6 +62,10 @@ func (s *Static) Check(toolName string, input json.RawMessage) Verdict {
 	}
 	if reason, denied := rootDelete(cmd); denied {
 		return Verdict{Decision: Deny, Reason: reason}
+	}
+	if askRe.MatchString(cmd) {
+		return Verdict{Decision: Ask,
+			Reason: "git push publishes to a remote — confirm the branch and remote before it runs"}
 	}
 	return Verdict{Decision: Allow}
 }

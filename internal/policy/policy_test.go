@@ -38,3 +38,12 @@ func TestStaticUnparseableInputIsAllow(t *testing.T) {
 		t.Fatalf("unparseable input denied: %+v", v)
 	}
 }
+
+func TestStaticAskRules(t *testing.T) {
+	e := NewStatic()
+	check(t, e, `{"command":"git push origin main"}`, "bash", Ask)
+	check(t, e, `{"command":"git push"}`, "bash", Ask)
+	check(t, e, `{"command":"git commit -m x && git push"}`, "bash", Ask)
+	check(t, e, `{"command":"git pull"}`, "bash", Allow)
+	check(t, e, `{"command":"echo git push"}`, "bash", Allow) // substring must not trip
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,18 +15,18 @@ import (
 
 const sessionCols = "id, agent_id, agent_version, harness, state, stop_reason, created_at, updated_at"
 
-// supportedHarnesses is the M1 registry. External adapters land at M4
-// (ADR-004); the column exists from day one so no retrofit migration is
-// needed, but values are validated, not free-form.
-var supportedHarnesses = map[string]bool{"native": true}
+// validHarnessRe: harness names are DNS-ish — the registry of known
+// harnesses lives at the API layer (injected from the harness registry);
+// the store validates format only. Mechanics here, policy above.
+var validHarnessRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // CreateSession pins an agent version and opens the log with a
 // session.created event, in one transaction. version 0 means "latest".
 func (s *Store) CreateSession(ctx context.Context, agentID uuid.UUID, version int, harness string) (*Session, *Event, error) {
-	if !supportedHarnesses[harness] {
+	if !validHarnessRe.MatchString(harness) {
 		return nil, nil, agentderr.InvalidInput(
-			fmt.Sprintf("unknown harness %q", harness),
-			"only 'native' is available at M1; external harness adapters land at M4 (see ADR-004)")
+			fmt.Sprintf("invalid harness %q", harness),
+			"harness names are lowercase letters, digits, and dashes (max 32); the known set is listed by the API layer")
 	}
 
 	resolved := version

@@ -158,9 +158,13 @@ func TestSessionPinsVersion(t *testing.T) {
 		t.Fatalf("session drifted to version %d", got.AgentVersion)
 	}
 
-	// Unknown harness is rejected with remediation.
-	if _, _, err := st.CreateSession(ctx, a.ID, 0, "cluade-code"); err == nil {
-		t.Fatal("expected invalid-input on unknown harness")
+	// Malformed harness names are rejected at the store (format check);
+	// the KNOWN-harness set is API-layer policy (M4 harness registry).
+	if _, _, err := st.CreateSession(ctx, a.ID, 0, "Bad_Harness"); err == nil {
+		t.Fatal("expected invalid-input on malformed harness")
+	}
+	if _, _, err := st.CreateSession(ctx, a.ID, 0, ""); err == nil {
+		t.Fatal("expected invalid-input on empty harness")
 	}
 }
 

@@ -510,3 +510,81 @@ func TestRunner_DrivesSessionToEndTurn(t *testing.T) {
 		t.Fatalf("last transition = %s, want running→idle", states[len(states)-1])
 	}
 }
+
+// --- escalation: ask parks at requires_action; the answer resumes ---
+
+func TestEscalation_AskParksAndAnswerResumes(t *testing.T) {
+	e := setup(t, testAgentConfig, []func(*model.CompletionRequest) (*model.CompletionResponse, error){
+		// turn 1: model wants to push
+		func(*model.CompletionRequest) (*model.CompletionResponse, error) {
+			return toolUseResp("tu1", "bash", map[string]string{"command": "git push origin main"}), nil
+		},
+		// turn 2 (after the human answers): model wraps up
+		func(req *model.CompletionRequest) (*model.CompletionResponse, error) {
+			// the new turn must see BOTH the escalation result and the answer
+			var sawEscalation, sawAnswer bool
+			for _, m := range req.Messages {
+				for _, b := range m.Blocks {
+					if b.Type == model.BlockToolResult && strings.Contains(b.Content, "escalated to a human") {
+						sawEscalation = true
+					}
+					if b.Type == model.BlockText && strings.Contains(b.Text, "approved") {
+						sawAnswer = true
+					}
+				}
+			}
+			if !sawEscalation || !sawAnswer {
+				t.Fatalf("turn 2 history missing escalation(%v)/answer(%v)", sawEscalation, sawAnswer)
+			}
+			return textResp("pushed"), nil
+		},
+	})
+	e.runAsRunning(t)
+	e.postUser(t, "ship it")
+
+	// Step 1: model call → assistant with the git push tool_use
+	if out, err := loop.Step(ctx, e.deps, e.sess.ID); err != nil || out != loop.OutcomeContinue {
+		t.Fatalf("step 1 = %q err=%v", out, err)
+	}
+	// Step 2: dispatch → ask verdict → parked at requires_action
+	if out, err := loop.Step(ctx, e.deps, e.sess.ID); err != nil || out != loop.OutcomeParked {
+		t.Fatalf("step 2 = %q err=%v, want parked", out, err)
+	}
+
+	sess, _ := e.st.GetSession(ctx, e.sess.ID)
+	if sess.State != store.StateIdle || sess.StopReason == nil || *sess.StopReason != store.StopRequiresAction {
+		t.Fatalf("state = %s reason = %v, want idle/requires_action", sess.State, sess.StopReason)
+	}
+
+	kinds := map[string]int{}
+	for _, ev := range e.events(t) {
+		kinds[ev.Type]++
+	}
+	if kinds[store.EventEscalationRequested] != 1 {
+		t.Fatalf("escalation.requested count = %d, want 1", kinds[store.EventEscalationRequested])
+	}
+	if kinds[store.EventToolCompleted] != 1 {
+		t.Fatalf("the asked tool must have a result (protocol balance), got %d", kinds[store.EventToolCompleted])
+	}
+
+	// The human answers; the next turn runs to end_turn with the full
+	// picture. Re-promote to running as the runner would.
+	e.runAsRunning(t)
+	e.postUser(t, "approved, push it now")
+	for {
+		out, err := loop.Step(ctx, e.deps, e.sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out == loop.OutcomeNoop {
+			break
+		}
+	}
+	sess, _ = e.st.GetSession(ctx, e.sess.ID)
+	if sess.StopReason == nil || *sess.StopReason != store.StopEndTurn {
+		t.Fatalf("after answer: state=%s reason=%v, want end_turn", sess.State, sess.StopReason)
+	}
+	if e.fm.callsMade() != 2 {
+		t.Fatalf("model calls = %d, want 2 (one per turn)", e.fm.callsMade())
+	}
+}

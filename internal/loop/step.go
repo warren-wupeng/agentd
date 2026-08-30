@@ -84,8 +84,12 @@ func Step(ctx context.Context, d *Deps, sessionID uuid.UUID) (Outcome, error) {
 	// Rule 6 first: tool_use blocks without results are dispatched before
 	// anything else — the model is waiting on its own tools.
 	if len(p.pending) > 0 {
-		if err := dispatchTools(ctx, d, sess, p); err != nil {
+		parked, err := dispatchTools(ctx, d, sess, p)
+		if err != nil {
 			return OutcomeParked, err
+		}
+		if parked {
+			return OutcomeParked, nil // escalation: waiting on a human
 		}
 		return OutcomeContinue, nil
 	}
@@ -189,9 +193,10 @@ func Step(ctx context.Context, d *Deps, sessionID uuid.UUID) (Outcome, error) {
 // already in the log never reach here (projection filters them), which is
 // the exactly-once-tools rule; a crash between execute and append can
 // still re-run a tool on the next Step — the documented at-least-once
-// boundary.
-func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *projection) error {
+// boundary. Returns parked=true when an ask verdict ended the turn.
+func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *projection) (bool, error) {
 	handle, hErr := d.Sandbox.Handle(sess.ID)
+	escalated := "" // reason of the first ask verdict, if any
 
 	for _, pt := range p.pending {
 		verdict := d.Policy.Check(pt.Block.Name, pt.Block.Input)
@@ -202,7 +207,7 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 				"input":       pt.Block.Input,
 				"verdict":     verdict,
 			})); err != nil {
-			return err
+			return false, err
 		}
 
 		if verdict.Decision == policy.Deny {
@@ -213,7 +218,37 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 					"output":      "denied: " + verdict.Reason,
 					"is_error":    true,
 				})); err != nil {
-				return err
+				return false, err
+			}
+			continue
+		}
+
+		if verdict.Decision == policy.Ask {
+			// Park for a human. The tool result tells the model what
+			// happened; escalation.requested is the audit trail; the turn
+			// ends at requires_action and the human's answer arrives as an
+			// ordinary message.user starting the next turn.
+			if escalated == "" {
+				escalated = verdict.Reason
+			}
+			if _, err := d.Store.AppendEvent(ctx, sess.ID, store.EventToolCompleted, store.ActorSystem,
+				mustJSON(map[string]any{
+					"tool_use_id": pt.Block.ID,
+					"output": "escalated to a human decision (" + verdict.Reason + ") — " +
+						"this tool was NOT run; the turn is parked at requires_action and " +
+						"the next user message carries the decision",
+				})); err != nil {
+				return false, err
+			}
+			if _, err := d.Store.AppendEvent(ctx, sess.ID, store.EventEscalationRequested, store.ActorSystem,
+				mustJSON(map[string]any{
+					"tool_use_id": pt.Block.ID,
+					"tool":        pt.Block.Name,
+					"input":       pt.Block.Input,
+					"reason":      verdict.Reason,
+					"remediation": "answer via POST /v1/sessions/{id}/events with a message.user saying whether to proceed",
+				})); err != nil {
+				return false, err
 			}
 			continue
 		}
@@ -224,7 +259,7 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 					"tool_use_id": pt.Block.ID,
 					"error":       "sandbox unavailable: " + hErr.Error(),
 				})); err != nil {
-				return err
+				return false, err
 			}
 			continue
 		}
@@ -238,7 +273,7 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 						pt.Block.Name),
 					"is_error": true,
 				})); err != nil {
-				return err
+				return false, err
 			}
 			continue
 		}
@@ -250,7 +285,7 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 					"tool_use_id": pt.Block.ID,
 					"error":       err.Error(),
 				})); aerr != nil {
-				return aerr
+				return false, aerr
 			}
 			continue
 		}
@@ -259,10 +294,20 @@ func dispatchTools(ctx context.Context, d *Deps, sess *store.Session, p *project
 				"tool_use_id": pt.Block.ID,
 				"output":      out,
 			})); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+
+	// Any ask parks the turn after the batch settles (the remaining tools
+	// ran or recorded their own verdicts — the model sees the full picture
+	// when the human answers).
+	if escalated != "" {
+		if ferr := finishTurn(ctx, d, sess, store.StopRequiresAction, escalated); ferr != nil {
+			return false, ferr
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // finishTurn records turn.completed and parks the session at idle with

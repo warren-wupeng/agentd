@@ -23,6 +23,8 @@ var knownEventTypes = map[string]bool{
 	EventToolCompleted:       true,
 	EventToolFailed:          true,
 	EventTurnCompleted:       true,
+	EventEscalationRequested: true,
+	EventHarnessLaunched:     true,
 }
 
 // AppendEvent adds one event and bumps the session's updated_at, atomically.
@@ -31,7 +33,7 @@ func (s *Store) AppendEvent(ctx context.Context, sessionID uuid.UUID, eventType 
 	if !knownEventTypes[eventType] {
 		return nil, agentderr.InvalidInput(
 			"unknown event type "+eventType,
-			"known types: session.created, session.state_changed, message.user, message.assistant, tool.requested, tool.completed, tool.failed, turn.completed")
+			"known types: session.created, session.state_changed, message.user, message.assistant, tool.requested, tool.completed, tool.failed, turn.completed, escalation.requested, harness.launched")
 	}
 
 	tx, err := s.pool.Begin(ctx)

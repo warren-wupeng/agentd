@@ -38,6 +38,17 @@ func WithStream(hp *hub.Hub, listener *store.EventListener) Option {
 	return func(h *handler) { h.hub = hp; h.listener = listener }
 }
 
+// WithHarnesses sets the known-harness registry for session creation
+// (ADR-004); nil/empty = native only (the M1-M3 default).
+func WithHarnesses(names []string) Option {
+	return func(h *handler) {
+		h.harnesses = map[string]bool{}
+		for _, n := range names {
+			h.harnesses[n] = true
+		}
+	}
+}
+
 // NewHandler builds the full route table (Go 1.22 method+pattern mux).
 func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	h := &handler{st: st}
@@ -70,10 +81,11 @@ func NewHandler(st *store.Store, opts ...Option) http.Handler {
 }
 
 type handler struct {
-	st       *store.Store
-	runner   Runner               // nil: CRUD-only process, no loop wired
-	hub      *hub.Hub             // nil: no streaming wired
-	listener *store.EventListener // nil: no streaming wired
+	st        *store.Store
+	runner    Runner               // nil: CRUD-only process, no loop wired
+	hub       *hub.Hub             // nil: no streaming wired
+	listener  *store.EventListener // nil: no streaming wired
+	harnesses map[string]bool      // nil: native only
 }
 
 func (h *handler) healthz(w http.ResponseWriter, r *http.Request) {

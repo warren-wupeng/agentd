@@ -88,6 +88,8 @@ const (
 	EventToolCompleted       = "tool.completed"
 	EventToolFailed          = "tool.failed"
 	EventTurnCompleted       = "turn.completed"
+	EventEscalationRequested = "escalation.requested"
+	EventHarnessLaunched     = "harness.launched"
 )
 
 // Event is one appended fact in a session's log (ADR-003).

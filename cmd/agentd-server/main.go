@@ -20,6 +20,7 @@ import (
 	"github.com/warren-wupeng/agentd/internal/agentderr"
 	"github.com/warren-wupeng/agentd/internal/api"
 	"github.com/warren-wupeng/agentd/internal/config"
+	"github.com/warren-wupeng/agentd/internal/harness"
 	"github.com/warren-wupeng/agentd/internal/hub"
 	"github.com/warren-wupeng/agentd/internal/loop"
 	"github.com/warren-wupeng/agentd/internal/model"
@@ -101,11 +102,24 @@ func serve(cfg *config.Config) error {
 			Log:          slog.Default(),
 			Deltas:       deltas,
 		}
-		runner := loop.NewRunner(ctx, deps)
-		opts = append(opts, api.WithRunner(runner), api.WithStream(deltas, listener))
+
+		// The harness seam (ADR-004): native is the reference runtime;
+		// OpenCode registers when its server URL is configured. The
+		// dispatcher routes each session by its harness column.
+		pol := policy.NewStatic()
+		hs := []harness.Harness{harness.NewNative(deps)}
+		if cfg.OpenCodeURL != "" {
+			hs = append(hs, harness.NewOpenCode(cfg.OpenCodeURL, st, pol))
+			slog.Info("opencode harness registered", "url", cfg.OpenCodeURL, "status", "experimental")
+		}
+		dispatcher := harness.NewDispatcher(ctx, st, slog.Default(), hs...)
+		opts = append(opts,
+			api.WithRunner(dispatcher),
+			api.WithStream(deltas, listener),
+			api.WithHarnesses(dispatcher.Names()))
 		// ctx cancellation (SIGINT/SIGTERM) stops in-flight actors at
 		// their next checkpoint; Wait drains them before exit.
-		defer runner.Wait()
+		defer dispatcher.Wait()
 
 		slog.Info("native loop enabled",
 			"sandbox", cfg.SandboxProv, "model_base_url", cfg.ModelBaseURL)

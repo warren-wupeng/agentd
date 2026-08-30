@@ -16,6 +16,7 @@ components:
   sandbox:    { in: internal/sandbox/** }
   policy:     { in: internal/policy/** }
   hub:        { in: internal/hub/** }
+  harness:    { in: internal/harness/** }
   store:      { in: internal/store/** }
   config:     { in: internal/config/** }
   agentderr:  { in: internal/agentderr/** }
@@ -28,10 +29,11 @@ commonComponents:
 
 # Components absent from deps may import nothing but commonComponents.
 deps:
-  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub] }
-  api:      { mayDependOn: [store, loop, hub] } # loop: the Runner seam (deepScan sees the wiring)
+  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub, harness] }
+  api:      { mayDependOn: [store, loop, hub, harness] } # wiring-level seams: loop Runner, harness Dispatcher (deepScan sees the cmd wiring)
   loop:     { mayDependOn: [store, model, tools, sandbox, policy] }
   hub:      { mayDependOn: [model] } # Delta type only — fan-out carries model fragments
+  harness:  { mayDependOn: [store, model, policy, loop] } # native wraps loop; adapters normalize into store events
   tools:    { mayDependOn: [sandbox, policy] }
   store:    { mayDependOn: [migrations] }
   testutil: { mayDependOn: [store] }
