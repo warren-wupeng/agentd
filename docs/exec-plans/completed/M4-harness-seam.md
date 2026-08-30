@@ -98,7 +98,34 @@ engine, so it belongs in the milestone that builds that bridge.
 - 2026-08-30: opencode session mapping lives in a `harness.launched`
   event, not a new table — replay gives the adapter its state for free
   (G3 discipline applies to harness bookkeeping too).
+- 2026-08-30: OpenCode permission.ask ids and tool parts share no join
+  key; permissions arrive immediately before their tool part, so the
+  last verdict applies to the next tool.requested — recorded honestly
+  in the code rather than pretending a correlation exists.
+- 2026-08-30: a delegated Ask (opencode permission ask hitting our
+  ask rules) answers reject and parks requires_action — the turn-key
+  contract matches the native loop's ask, decided by the same engine.
 
 ## Progress log
 
 - 2026-08-30: plan created. No code yet.
+- 2026-08-30: **M4 done.** Escalation: policy Ask (git push), loop parks
+  at requires_action with a protocol-balanced tool result +
+  escalation.requested; the answer starts the next turn (tested: the
+  model provably saw both the escalation notice and the answer).
+  internal/harness: the seam, Native (the M2/M3 loop behind the
+  interface), Dispatcher (api.Runner contract, routes by harness
+  column), OpenCode adapter (external server via OPENCODE_URL, mapping
+  durable as harness.launched, SSE normalization, permission.ask
+  delegated to our engine — allow→once, deny/ask→reject with a
+  requires_action park). Store validates harness format only;
+  known-harness moves to the API (WithHarnesses). cmd swaps
+  loop.Runner for the dispatcher.
+- 2026-08-30: **Done-when met mechanically**:
+  TestConformance_NativeVsOpenCodeGoldenTranscript — same task through
+  both harnesses, identical normalized streams (asserted against the
+  golden shape AND against each other), prompt delivered, permission
+  delegated and answered with our engine's verdict, both sessions
+  parked idle/end_turn. Adapter marked experimental pending live
+  opencode validation — conformance green is necessary, not sufficient.
+  All suites green, both linters clean, CI green.
