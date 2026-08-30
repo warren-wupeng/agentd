@@ -15,7 +15,8 @@ Stack: Go 1.24, pgx/v5, sqlc (typed queries), golang-migrate, net/http ServeMux
 2. **Schema.** Migration 0001: `agents`, `agent_versions`, `sessions`,
    `events` per ADR-003. `agent_versions` carries the full config snapshot
    (model, system prompt, tools, mcp_servers) + monotonically increasing
-   version number per agent.
+   version number per agent. `sessions` carries `harness text NOT NULL
+   DEFAULT 'native'` (ADR-004 — avoids a retrofit migration later).
    *Accepts:* `migrate up && migrate down && migrate up` clean; constraints
    verified (FK cascade on events, unique (agent_id, version)).
 3. **Store layer.** sqlc queries + thin wrappers enforcing G1 (state
@@ -57,6 +58,10 @@ Parallelizable: 4+5+6 can proceed together once 3 lands; 8 any time after 1.
   dependency, patterns cover our routing.
 - 2026-08-30: Agent delete policy = 409 with live sessions (no cascade) —
   deletion is a governance act, not an accident.
+- 2026-08-30: ADR-004 landed (harness-agnostic runtime; six primitives).
+  M1 unaffected — the CRUD/schema layer has no harness coupling; `sessions`
+  gains a nullable `harness` column (default `native`) in the 0001 migration
+  so no retrofit migration is needed later.
 
 ## Progress log
 

@@ -25,7 +25,8 @@ supersedes it.
 
 ```
 cmd/agentd-server/     control-plane API entrypoint
-internal/orchestrator/ agent loop, session state machine
+internal/orchestrator/ session supervision, state machine, DAG scheduler
+internal/harness/      Harness interface + adapters (native, opencode, ...)
 internal/sandbox/      SandboxProvider impls (docker dev, e2b prod)
 internal/vault/        credential store + injection proxy
 internal/governance/   tenancy, RBAC, budgets, audit log
@@ -44,8 +45,10 @@ If it isn't in this tree, it doesn't exist. Decisions made in chat, PRs, or
 people's heads must land here or be treated as undecided.
 
 ```
-docs/adr/            settled decisions (001 sandbox, 002 no-wire-compat, 003 event store)
-docs/design/         working designs (agent loop, harness-engineering adoption)
+docs/adr/            settled decisions (001 sandbox, 002 no-wire-compat,
+                     003 event store, 004 harness-agnostic runtime)
+docs/design/         working designs (agent loop, harness adapters,
+                     harness-engineering adoption)
 docs/research/       external landscape research
 docs/exec-plans/     active/ + completed/ execution plans, tech-debt tracker
 docs/GOLDEN.md       mechanical invariants, enforced by lint + CI

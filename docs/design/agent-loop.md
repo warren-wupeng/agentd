@@ -1,9 +1,20 @@
 # Agent loop design (orchestrator core)
 
+> **Status note (2026-08-30, ADR-004):** this document describes the
+> **native harness** (`harness: native`) — the reference implementation
+> behind the `Harness` interface, not the only runtime. External harnesses
+> (OpenCode, Claude Code, …) execute sessions inside workers via adapters;
+> see `docs/design/harness-adapters.md`. Everything below remains correct
+> *for the native loop*; the "Why not a framework" section's claim that the
+> loop is where our differentiation lives is superseded — differentiation
+> moved up a layer (normalization, governance, state), and this loop now
+> also serves as the seam validator: if the native loop can't sit behind
+> the `Harness` interface, the interface is wrong.
+
 Scope: M2 delivers the minimal version of this; M3 hardens durability and
 streaming. This document describes the target shape so M2 code is written
 against the right seams. Related: ADR-001 (where tools execute), ADR-003
-(event store), `docs/GOLDEN.md` G1/G3.
+(event store), ADR-004 (harness-agnostic runtime), `docs/GOLDEN.md` G1/G3.
 
 ## The one-sentence design
 

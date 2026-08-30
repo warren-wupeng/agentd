@@ -31,15 +31,21 @@ failed (Design principle 3).
 `internal/vault` + test fixtures; `vault.SecretRef` is the only type allowed to
 cross package boundaries.
 
-## G3. State is derived from the event log
+## G3. State is derived from the event log — model-visible ⟺ logged
 
 No goroutine-local or in-memory truth that can't be reconstructed by replaying
 `events` for that session. In-memory projections are caches, never sources.
+Sharpened form (borrowed from deepseek-harness, which runtime-asserts it):
+**anything that enters a model request must be reconstructible from the log.**
+If a system prompt section, a tool schema, or a compacted summary reaches the
+model, it reached the log first.
 
 *Why:* the loop must survive `kill -9` at any point and resume correctly
-(see `docs/design/agent-loop.md`).
+(see `docs/design/agent-loop.md`); and any discrepancy between what the model
+saw and what we recorded makes sessions impossible to debug, audit, or eval.
 *Enforced by:* replay tests — every stateful component has a test that rebuilds
-state from a recorded event fixture and diffs against the live projection.
+state from a recorded event fixture and diffs against the live projection. The
+native loop asserts request-vs-log consistency in dev builds.
 
 ## G4. New endpoint → replay test
 

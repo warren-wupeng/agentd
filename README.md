@@ -1,6 +1,6 @@
 # agentd
 
-**Self-hosted managed agents platform.** Versioned agent configs, durable session orchestration, and sandboxed tool execution — the open-source answer to Anthropic's Managed Agents.
+**Self-hosted, harness-agnostic managed agents platform.** Versioned agent configs, durable session orchestration, sandboxed execution — the open control plane for agent workers running *any* harness: our native loop, OpenCode, Claude Code, or yours.
 
 > **Status: design stage (pre-alpha).** This README is the spec. Code lands milestone by milestone — see [Roadmap](#roadmap). Watch the repo or open an issue to follow along.
 
@@ -12,41 +12,44 @@ Anthropic's Managed Agents showed what a production agent platform looks like: p
 
 The pieces to build your own already exist — [E2B](https://github.com/e2b-dev/E2B) for Firecracker sandboxing, [OpenHands](https://github.com/All-Hands-AI/OpenHands) for agent-runtime patterns, durable-execution engines for scheduling. What's missing is the layer that ties them together with the right semantics: **an open control plane**.
 
+Meanwhile the agent loop itself is commoditizing: OpenAI open-sourced the Codex harness, and every lab ships a CLI agent (Claude Code, deepseek-harness, OpenCode, pi, …). The durable layer is *above* the loop — orchestration, governance, and state that work for **any** harness.
+
 agentd is that control plane.
 
 ## The model
 
-Four primitives:
+Six primitives:
 
 | Primitive | What it is |
 |---|---|
 | **Agent** | Persisted, *versioned* config: model, system prompt, tools, MCP servers, skills. Updates create immutable versions; sessions pin to one. |
-| **Session** | One stateful run of an agent. An append-only **event stream**, not a chat log. |
-| **Environment** | Template for provisioning tool-execution sandboxes: network policy (`unrestricted` / `allowed_hosts`), packages, isolation backend. |
-| **Sandbox** | The per-session isolated container where *tools* execute (bash, files, code). The agent loop never runs here. |
+| **Harness** | Pluggable agent runtime (ADR-004): our `native` loop, or an external CLI harness (OpenCode, Claude Code, …) driven through an adapter that normalizes its protocol into the session event log. Fixed per worker at creation, with declared capability bits. |
+| **Session** | One stateful run of an agent on a harness. An append-only **event stream**, not a chat log. |
+| **Environment** | Template for provisioning workers: network policy (`unrestricted` / `allowed_hosts`), packages, isolation backend. |
+| **Sandbox** | The per-session isolated worker where the harness and its tools execute. Disposable and rebuildable from session checkpoint + workspace volume. |
+| **Workflow** | Versioned **DAG definition**: nodes are tasks bound to an agent + harness, edges are dependencies, with parallel fan-out/join and retry policy. (Post-v1 implementation; seam designed now.) |
 
-The key separation: **the agent loop runs in the orchestrator; only tool execution runs in the sandbox.** Intelligence on the control plane, hands and feet in the sandbox.
+The key separation: **the control plane never depends on any one loop.** The native loop runs in the orchestrator; external harnesses run inside the worker — both normalize to the same event log. Sandboxes stay disposable: destroy a worker, remount its workspace, resume from checkpoint.
 
 ```
-                 ┌──────────────────────────────────────────────┐
- Agent (config) ─▶│  Orchestrator (agent loop)                   │
-                 │  model calls · tool routing · compaction     │
-                 └──────────────────┬───────────────────────────┘
-                                    │ tool calls
-                                    ▼
- Environment (template) ─▶  Sandbox pool (E2B / Docker+gVisor)
-                                    │
-                 Session ───────────┤
-                                    ├── Resources (files, git repos, memory)
-                                    ├── Vault refs (credentials injected by
-                                    │    control-plane proxy — never enter sandbox)
-                                    └── Event stream (SSE out, events in)
+Workflow (DAG) ──┐
+Agent (config) ──┼─▶ Control plane: session supervision · DAG scheduling
+                 │    event normalization · budgets · audit
+                 │         │ Harness interface (ADR-004)
+                 │         ├─▶ native loop (in orchestrator — reference impl)
+                 │         └─▶ external harness per worker: OpenCode · Claude Code · …
+                 │
+Environment ─────┼─▶ Sandbox pool (E2B / Docker) — one worker per session:
+                 │    harness + model + skills + checkpoint + workspace mount
+Session ─────────┘    ├── Resources (files, git repos)
+                      ├── Vault refs (proxy-injected — never enter sandbox)
+                      └── Events (normalized → append-only log → SSE out)
 ```
 
 ## Design principles
 
 1. **Agents are config; sessions are events.** Config is versioned and cheap to diff. Everything that happens in a run is an event in an append-only log. SSE is just a tail of that log — reconnect means replay + dedupe by event id, so a dropped client never deadlocks a session.
-2. **The loop is replaceable.** The default orchestrator loop speaks the Anthropic API, but sits behind a `ModelProvider` interface. Bring Claude, GPT, or a local model.
+2. **The runtime is replaceable.** The default loop speaks the Anthropic API behind a `ModelProvider` interface — and the loop itself sits behind a `Harness` interface (ADR-004): Claude Code, OpenCode, or your own runtime can execute a session. Bring any model, any harness.
 3. **Credentials never enter the sandbox.** MCP and git calls route through a control-plane proxy that injects tokens from the vault (AES-256-GCM at rest, write-only over the API). If agent-written code inside the sandbox can read your secret, the design has failed.
 4. **Sandboxes are someone else's hard problem — on purpose.** We don't reinvent microVM orchestration. E2B (Firecracker) for production isolation, Docker+gVisor for cheap dev, your own infra via the `SandboxProvider` interface.
 5. **Durable by default.** Sessions survive orchestrator restarts: `rescheduling → running ↔ idle → terminated`, with explicit `stop_reason` semantics (`requires_action` vs `end_turn` vs `retries_exhausted`) so clients can tell "waiting on you" from "done".
@@ -61,11 +64,11 @@ The core loop gets you a working agent. Running agents *inside a company* takes 
 3. **Agent Eval.** Traces become datasets; datasets get scored by rubric or LLM-judge; scorers run in CI as a **regression gate between agent versions**. "Why is v3 better than v2?" should produce a report, not a vibe. This is the payoff for versioning agents in the first place.
 4. **Guardrails.** One policy engine, three layers: tool-level (`allow` / `ask` / `deny` per tool, per tenant), content-level (input/output guardrail hooks on the model path), network-level (sandbox egress policy from the Environment). Deny decisions are events too — auditable by construction.
 5. **Protocols.** MCP for tools in. A2A and ACP for agents in *and* out: an agentd agent can be exposed as an A2A/ACP endpoint, and can consume an external A2A agent as a tool. One adapter layer, both directions.
-6. **Sub-agents.** Main agent + sub-agent orchestration: context-isolated threads, shared sandbox filesystem, explicit cross-thread messages. Threads are just namespaced event streams, so the design survives contact with the event model; implementation is post-v1.
+6. **Sub-agents.** Main agent + sub-agent orchestration as **Workflow DAG nodes**: context-isolated workers (each with its own harness, quota, audit trail, and retry policy), shared workspace mounts, explicit cross-node artifacts. Cleaner governance than in-loop threads — a sub-agent is just another session the DAG schedules. Lands with the Workflow primitive, post-v1.
 
 ## Non-goals (v1)
 
-- Sub-agent threads (designed — see Platform capabilities; implementation is post-v1)
+- A general-purpose DAG/workflow engine — our Workflow is agent-semantics-only by design (ADR-004); Argo/Temporal already exist
 - Rubric-graded outcome *loops* (Eval covers the scoring half; the iterate-until-satisfied loop is post-v1)
 - A hosted SaaS — agentd is software *you* run
 - Wire-compatibility with Anthropic's API. We borrow the shapes that work; we don't clone the wire format.
@@ -75,14 +78,15 @@ The core loop gets you a working agent. Running agents *inside a company* takes 
 | Milestone | Scope | Done when |
 |---|---|---|
 | **M1** | Postgres schema; agents/sessions/events CRUD; agent versioning | API tests pass |
-| **M2** | Orchestrator loop; bash/read/write/edit tools; single-Docker sandbox | One session runs read → edit → exec end-to-end |
+| **M2** | Native agent loop (`harness: native`); bash/read/write/edit tools; single-Docker sandbox | One session runs read → edit → exec end-to-end |
 | **M3** | SSE event stream + history replay + `processed_at` + idle/`stop_reason` state machine | `kill -9` the client mid-run, reconnect, nothing lost |
-| **M4** | E2B sandbox backend + network policy enforcement | Sandbox escape test suite passes |
-| **M5** | Vault + MCP credential proxy + minimal TS/Python SDK | Agent calls an MCP server with zero secrets in the sandbox |
-| **M6** | Eval harness v0: trace → dataset → rubric scorer → version-compare report | Two agent versions scored on the same dataset, diff printed |
-| **M7** | Sample agent (RAG code-review bot) + web console (Node.js) | Demo: question in, cited review out |
+| **M4** | `Harness` adapter seam + first external adapter (OpenCode) + golden-transcript conformance suite | Same task driven by native and OpenCode produces the same normalized event stream |
+| **M5** | E2B sandbox backend + network policy enforcement | Sandbox escape test suite passes |
+| **M6** | Vault + MCP credential proxy + minimal TS/Python SDK | Agent calls an MCP server with zero secrets in the sandbox |
+| **M7** | Eval harness v0: trace → dataset → rubric scorer → version-compare report | Two agent versions scored on the same dataset, diff printed |
+| **M8** | Workflow DAG v0 + software-dev flow template (code → review → test → merge) + web console (Node.js) | Demo: spec in → parallel harness workers → merged artifact out |
 
-Explicitly later: sub-agent threads, outcome loops, memory stores, webhooks — gated on what the first real users actually hit, in that order.
+Explicitly later: general-purpose workflow features, more adapters (deepseek-harness, pi, Codex), memory stores, webhooks — gated on what the first real users actually hit, in that order.
 
 ## Planned layout
 
@@ -90,7 +94,8 @@ Control plane in **Go**; console in Node.js + React; SDKs in TypeScript and Pyth
 
 ```
 cmd/agentd-server/     # control-plane API
-internal/orchestrator/ # agent loop, session state machine
+internal/orchestrator/ # session supervision, state machine, DAG scheduler
+internal/harness/      # Harness interface + adapters (native, opencode, ...) + conformance suite
 internal/sandbox/      # e2b + docker SandboxProvider implementations
 internal/vault/        # credential store + injection proxy
 internal/governance/   # tenancy, RBAC, budgets, audit log
@@ -113,4 +118,4 @@ At design stage the most valuable contribution is critique: open an issue if a d
 
 ## Acknowledgments
 
-Design points unapologetically borrowed from the public docs of Anthropic Managed Agents (the four-primitive model, event-sourced sessions, vault-proxy credentials). Built on the shoulders of [OpenHands](https://github.com/All-Hands-AI/OpenHands) (MIT) and [E2B](https://github.com/e2b-dev/E2B) (Apache 2.0). Related prior art: [open-managed-agents](https://github.com/rogeriochaves/open-managed-agents) (AGPL).
+Design points unapologetically borrowed from the public docs of Anthropic Managed Agents (the four-primitive model, event-sourced sessions, vault-proxy credentials). Built on the shoulders of [OpenHands](https://github.com/All-Hands-AI/OpenHands) (MIT) and [E2B](https://github.com/e2b-dev/E2B) (Apache 2.0). The harness-agnostic runtime (ADR-004) is grounded in a comparative architecture study of [deepseek-harness, OpenCode, and pi](https://github.com/warren-wupeng/dsh-architecture) — three harnesses that independently converge on append-only session logs and isomorphic step loops. Related prior art: [open-managed-agents](https://github.com/rogeriochaves/open-managed-agents) (AGPL).
