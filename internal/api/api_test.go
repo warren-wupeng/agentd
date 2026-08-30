@@ -1,0 +1,288 @@
+package api_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/warren-wupeng/agentd/internal/api"
+	"github.com/warren-wupeng/agentd/internal/testutil"
+)
+
+type server struct {
+	t  *testing.T
+	ts *httptest.Server
+}
+
+func TestMain(m *testing.M) { testutil.Main(m) }
+
+func newServer(t *testing.T) *server {
+	t.Helper()
+	st := testutil.NewStore(t)
+	ts := httptest.NewServer(api.NewHandler(st))
+	t.Cleanup(ts.Close)
+	return &server{t: t, ts: ts}
+}
+
+// do performs a request and fails the test on transport errors. Body may be nil.
+func (s *server) do(method, path string, body any) (int, map[string]any) {
+	s.t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			s.t.Fatal(err)
+		}
+		rdr = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(method, s.ts.URL+path, rdr)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var out map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &out); err != nil {
+			s.t.Fatalf("non-JSON response to %s %s: %s", method, path, raw)
+		}
+	}
+	return resp.StatusCode, out
+}
+
+func (s *server) mustCreateAgent(name, model string) string {
+	s.t.Helper()
+	code, resp := s.do("POST", "/v1/agents", map[string]any{
+		"name": name, "description": "test agent",
+		"config": map[string]any{"model": model},
+	})
+	if code != http.StatusCreated {
+		s.t.Fatalf("create agent: %d %v", code, resp)
+	}
+	return resp["agent"].(map[string]any)["id"].(string)
+}
+
+func TestHealthz(t *testing.T) {
+	s := newServer(t)
+	code, resp := s.do("GET", "/healthz", nil)
+	if code != http.StatusOK || resp["status"] != "ok" {
+		t.Fatalf("healthz: %d %v", code, resp)
+	}
+}
+
+func TestAgentVersioningOverHTTP(t *testing.T) {
+	s := newServer(t)
+	id := s.mustCreateAgent("http-versioned", "m1")
+
+	// Unknown fields are rejected with a remediation (G5).
+	code, resp := s.do("POST", "/v1/agents", map[string]any{
+		"name": "bad", "confg": map[string]any{"model": "m"},
+	})
+	if code != http.StatusBadRequest || resp["error"].(map[string]any)["remediation"] == "" {
+		t.Fatalf("want 400 with remediation, got %d %v", code, resp)
+	}
+
+	// Missing config.model → 400.
+	code, _ = s.do("POST", "/v1/agents", map[string]any{
+		"name": "nomodel", "config": map[string]any{"system_prompt": "hi"},
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("want 400 for missing model, got %d", code)
+	}
+
+	// PUT creates v2; v1 remains retrievable and semantically intact.
+	code, resp = s.do("PUT", "/v1/agents/"+id, map[string]any{
+		"config": map[string]any{"model": "m2", "system_prompt": "new"},
+	})
+	if code != http.StatusCreated || resp["version"].(map[string]any)["version"].(float64) != 2 {
+		t.Fatalf("create v2: %d %v", code, resp)
+	}
+
+	code, resp = s.do("GET", "/v1/agents/"+id+"/versions/1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("get v1: %d %v", code, resp)
+	}
+	cfg := resp["version"].(map[string]any)["config"].(map[string]any)
+	if cfg["model"] != "m1" {
+		t.Fatalf("v1 config drifted: %v", cfg)
+	}
+
+	code, resp = s.do("GET", "/v1/agents/"+id+"/versions/99", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", code)
+	}
+	rem := resp["error"].(map[string]any)["remediation"].(string)
+	if rem == "" {
+		t.Fatal("404 must carry remediation")
+	}
+}
+
+func TestDeleteAgentOverHTTP(t *testing.T) {
+	s := newServer(t)
+	id := s.mustCreateAgent("deletable", "m1")
+
+	// With a live session → 409.
+	code, _ := s.do("POST", "/v1/sessions", map[string]any{"agent_id": id})
+	if code != http.StatusCreated {
+		t.Fatal("setup session failed")
+	}
+	code, resp := s.do("DELETE", "/v1/agents/"+id, nil)
+	if code != http.StatusConflict || resp["error"].(map[string]any)["remediation"] == "" {
+		t.Fatalf("want 409 with remediation, got %d %v", code, resp)
+	}
+
+	// Without sessions → 204.
+	id2 := s.mustCreateAgent("deletable2", "m1")
+	code, _ = s.do("DELETE", "/v1/agents/"+id2, nil)
+	if code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", code)
+	}
+}
+
+// TestReplay_SessionEventLog is the G4 replay test for the events endpoint:
+// kill the flow mid-run (here: replay from a mid-log cursor), reconnect,
+// and assert the client sees an ordered, lossless, idempotent history.
+func TestReplay_SessionEventLog(t *testing.T) {
+	s := newServer(t)
+	agentID := s.mustCreateAgent("replay-api", "m1")
+
+	code, resp := s.do("POST", "/v1/sessions", map[string]any{"agent_id": agentID})
+	if code != http.StatusCreated {
+		t.Fatalf("create session: %v", resp)
+	}
+	sessID := resp["session"].(map[string]any)["id"].(string)
+
+	for i := 0; i < 50; i++ {
+		code, resp := s.do("POST", "/v1/sessions/"+sessID+"/events",
+			map[string]any{"payload": map[string]any{"i": i}})
+		if code != http.StatusCreated {
+			t.Fatalf("append %d: %d %v", i, code, resp)
+		}
+	}
+
+	// Full page: 51 events (50 + session.created), cursor present at limit.
+	code, resp = s.do("GET", "/v1/sessions/"+sessID, nil)
+	if code != http.StatusOK || resp["session"].(map[string]any)["state"] != "rescheduling" {
+		t.Fatalf("get session: %d %s", code, errStr(resp))
+	}
+	code, resp = s.do("GET", "/v1/sessions/"+sessID+"/events?limit=10", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list events: %d", code)
+	}
+	events := resp["events"].([]any)
+	if len(events) != 10 {
+		t.Fatalf("want 10 events, got %d", len(events))
+	}
+	cursor := resp["next_after_seq"].(float64)
+
+	// Replay from a mid-log cursor twice: identical, ordered ids.
+	var first, second []any
+	code, resp = s.do("GET", fmt.Sprintf("/v1/sessions/%s/events?after_seq=%d", sessID, int(cursor)), nil)
+	if code != http.StatusOK {
+		t.Fatal("replay failed")
+	}
+	first = resp["events"].([]any)
+	code, resp = s.do("GET", fmt.Sprintf("/v1/sessions/%s/events?after_seq=%d", sessID, int(cursor)), nil)
+	if code != http.StatusOK {
+		t.Fatal("replay 2 failed")
+	}
+	second = resp["events"].([]any)
+
+	if len(first) != len(second) || len(first) == 0 {
+		t.Fatalf("replay mismatch: %d vs %d", len(first), len(second))
+	}
+	prevSeq := 0.0
+	for i := range first {
+		a, b := first[i].(map[string]any), second[i].(map[string]any)
+		if a["id"] != b["id"] {
+			t.Fatalf("replay not idempotent at %d", i)
+		}
+		seq := a["seq"].(float64)
+		if seq <= prevSeq {
+			t.Fatalf("events out of order: %v after %v", seq, prevSeq)
+		}
+		prevSeq = seq
+	}
+
+	// Claim an event; claiming twice must not move processed_at.
+	evID := first[0].(map[string]any)["id"].(string)
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/events/"+evID+"/claim", nil)
+	if code != http.StatusOK || resp["event"].(map[string]any)["processed_at"] == nil {
+		t.Fatalf("claim: %d %v", code, resp)
+	}
+	pt1 := resp["event"].(map[string]any)["processed_at"].(string)
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/events/"+evID+"/claim", nil)
+	if code != http.StatusOK || resp["event"].(map[string]any)["processed_at"].(string) != pt1 {
+		t.Fatalf("second claim changed processed_at: %v", resp)
+	}
+
+	// User cannot post system event types.
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/events",
+		map[string]any{"type": "session.state_changed", "payload": map[string]any{}})
+	if code != http.StatusBadRequest {
+		t.Fatalf("want 400 for system type, got %d %v", code, resp)
+	}
+}
+
+func TestTransitionsOverHTTP(t *testing.T) {
+	s := newServer(t)
+	agentID := s.mustCreateAgent("fsm-api", "m1")
+	code, resp := s.do("POST", "/v1/sessions", map[string]any{"agent_id": agentID})
+	if code != http.StatusCreated {
+		t.Fatal(resp)
+	}
+	sessID := resp["session"].(map[string]any)["id"].(string)
+
+	// Illegal edge → 409 with remediation naming legal targets.
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/transitions", map[string]any{"to": "idle"})
+	if code != http.StatusConflict {
+		t.Fatalf("want 409, got %d %v", code, resp)
+	}
+	e := resp["error"].(map[string]any)
+	if e["code"] != "INVALID_TRANSITION" || e["remediation"] == "" {
+		t.Fatalf("bad error shape: %v", e)
+	}
+
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/transitions", map[string]any{"to": "running"})
+	if code != http.StatusOK || resp["session"].(map[string]any)["state"] != "running" {
+		t.Fatalf("→running: %d %v", code, resp)
+	}
+	if resp["event"].(map[string]any)["type"] != "session.state_changed" {
+		t.Fatalf("transition did not emit event: %v", resp)
+	}
+
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/transitions",
+		map[string]any{"to": "idle", "stop_reason": "requires_action"})
+	if code != http.StatusOK {
+		t.Fatalf("→idle: %d %v", code, resp)
+	}
+	if resp["session"].(map[string]any)["stop_reason"] != "requires_action" {
+		t.Fatalf("stop_reason missing: %v", resp)
+	}
+
+	// idle → terminated is legal; terminated is final.
+	code, _ = s.do("POST", "/v1/sessions/"+sessID+"/transitions", map[string]any{"to": "terminated"})
+	if code != http.StatusOK {
+		t.Fatalf("idle→terminated should be legal, got %d", code)
+	}
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/transitions", map[string]any{"to": "running"})
+	if code != http.StatusConflict {
+		t.Fatalf("terminated must be final, got %d %v", code, resp)
+	}
+}
+
+func errStr(resp map[string]any) string {
+	raw, _ := json.Marshal(resp)
+	return string(raw)
+}

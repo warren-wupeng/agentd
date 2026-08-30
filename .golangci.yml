@@ -1,0 +1,17 @@
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - misspell
+
+issues:
+  # Tests are allowed looser hygiene on unchecked type assertions etc.
+  exclude-rules: []

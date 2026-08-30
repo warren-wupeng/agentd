@@ -1,0 +1,21 @@
+# Local development Postgres. Tests don't need this (they use
+# embedded-postgres); this is for `make dev-up && make run`.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agentd
+      POSTGRES_PASSWORD: agentd
+      POSTGRES_DB: agentd
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentd"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

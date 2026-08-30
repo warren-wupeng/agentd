@@ -1,0 +1,31 @@
+# go-arch-lint: enforces the internal/ layering from AGENTS.md (Practice 3 —
+# boundaries enforced mechanically, not by convention).
+# Schema v3: mayDependOn = project components, canUse = vendors (unused —
+# depOnAnyVendor covers third-party imports globally).
+version: 3
+
+allow:
+  depOnAnyVendor: true
+
+components:
+  cmd:        { in: cmd/** }
+  api:        { in: internal/api/** }
+  store:      { in: internal/store/** }
+  config:     { in: internal/config/** }
+  agentderr:  { in: internal/agentderr/** }
+  migrations: { in: migrations/** }
+  testutil:   { in: internal/testutil/** }
+
+# agentderr is the error type crossing all layers (G5) — everyone may use it.
+commonComponents:
+  - agentderr
+
+# Components absent from deps may import nothing but commonComponents.
+deps:
+  cmd:      { mayDependOn: [api, store, config] }
+  api:      { mayDependOn: [store] }
+  store:    { mayDependOn: [migrations] }
+  testutil: { mayDependOn: [store] }
+
+excludeFiles:
+  - "^.*_test\\.go$"

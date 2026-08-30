@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - run: go vet ./...
+      # Tests boot their own embedded Postgres — no service container.
+      - run: go test ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      # Installed from source: prebuilt golangci-lint binaries are compiled
+      # with an older Go and refuse a go1.25 target.
+      - run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+      - run: golangci-lint run ./...
+      - run: go install github.com/fe3dback/go-arch-lint@v1.18.0
+      - run: go-arch-lint check
