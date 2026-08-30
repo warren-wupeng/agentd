@@ -66,10 +66,12 @@ type wireToolDef struct {
 }
 
 type wireRequest struct {
-	Model     string        `json:"model"`
-	Messages  []wireMessage `json:"messages"`
-	Tools     []wireToolDef `json:"tools,omitempty"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	Model         string          `json:"model"`
+	Messages      []wireMessage   `json:"messages"`
+	Tools         []wireToolDef   `json:"tools,omitempty"`
+	MaxTokens     int             `json:"max_tokens,omitempty"`
+	Stream        bool            `json:"stream,omitempty"`
+	StreamOptions map[string]bool `json:"stream_options,omitempty"`
 }
 
 type wireResponse struct {
@@ -155,6 +157,11 @@ func (o *OpenAI) Complete(ctx context.Context, req *CompletionRequest) (*Complet
 		out.Blocks = append(out.Blocks, TextBlock(choice.Message.Content))
 	}
 	for _, tc := range choice.Message.ToolCalls {
+		if !json.Valid([]byte(tc.Function.Arguments)) {
+			return nil, fmt.Errorf(
+				"model returned tool_call %q with invalid JSON arguments: %.120s",
+				tc.Function.Name, tc.Function.Arguments)
+		}
 		out.Blocks = append(out.Blocks, Block{
 			Type:  BlockToolUse,
 			ID:    tc.ID,

@@ -20,6 +20,7 @@ import (
 	"github.com/warren-wupeng/agentd/internal/agentderr"
 	"github.com/warren-wupeng/agentd/internal/api"
 	"github.com/warren-wupeng/agentd/internal/config"
+	"github.com/warren-wupeng/agentd/internal/hub"
 	"github.com/warren-wupeng/agentd/internal/loop"
 	"github.com/warren-wupeng/agentd/internal/model"
 	"github.com/warren-wupeng/agentd/internal/policy"
@@ -83,6 +84,12 @@ func serve(cfg *config.Config) error {
 		if err != nil {
 			return err
 		}
+		listener, err := store.NewEventListener(ctx, cfg.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("event listener: %w", err)
+		}
+		defer func() { _ = listener.Close() }()
+		deltas := hub.New()
 		deps := &loop.Deps{
 			Store:        st,
 			Model:        model.NewOpenAI(cfg.ModelBaseURL, cfg.ModelAPIKey),
@@ -92,9 +99,10 @@ func serve(cfg *config.Config) error {
 			MaxSteps:     cfg.LoopMaxSteps,
 			ModelRetries: cfg.LoopRetries,
 			Log:          slog.Default(),
+			Deltas:       deltas,
 		}
 		runner := loop.NewRunner(ctx, deps)
-		opts = append(opts, api.WithRunner(runner))
+		opts = append(opts, api.WithRunner(runner), api.WithStream(deltas, listener))
 		// ctx cancellation (SIGINT/SIGTERM) stops in-flight actors at
 		// their next checkpoint; Wait drains them before exit.
 		defer runner.Wait()

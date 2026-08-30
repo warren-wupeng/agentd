@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/agentderr"
+	"github.com/warren-wupeng/agentd/internal/hub"
 	"github.com/warren-wupeng/agentd/internal/store"
 )
 
@@ -29,6 +30,12 @@ type Option func(*handler)
 // session actor, and POST /v1/sessions/{id}/run becomes available.
 func WithRunner(r Runner) Option {
 	return func(h *handler) { h.runner = r }
+}
+
+// WithStream enables the SSE tail: ephemeral deltas from the loop's hub
+// plus the store's notify-driven event wakes (ADR-003).
+func WithStream(hp *hub.Hub, listener *store.EventListener) Option {
+	return func(h *handler) { h.hub = hp; h.listener = listener }
 }
 
 // NewHandler builds the full route table (Go 1.22 method+pattern mux).
@@ -57,13 +64,16 @@ func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /v1/sessions/{id}/events", h.listEvents)
 	mux.HandleFunc("POST /v1/sessions/{id}/events/{eventId}/claim", h.claimEvent)
 	mux.HandleFunc("POST /v1/sessions/{id}/run", h.runSession)
+	mux.HandleFunc("GET /v1/sessions/{id}/stream", h.streamSession)
 
 	return requestLogger(mux)
 }
 
 type handler struct {
-	st     *store.Store
-	runner Runner // nil: CRUD-only process, no loop wired
+	st       *store.Store
+	runner   Runner               // nil: CRUD-only process, no loop wired
+	hub      *hub.Hub             // nil: no streaming wired
+	listener *store.EventListener // nil: no streaming wired
 }
 
 func (h *handler) healthz(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +143,15 @@ type statusRecorder struct {
 func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+// Flush forwards to the wrapped writer: without this, every middleware
+// wrapper hides http.Flusher from handlers and SSE dies with a 500 —
+// the interface must be re-implemented at every layer.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func requestLogger(next http.Handler) http.Handler {

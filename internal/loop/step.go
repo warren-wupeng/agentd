@@ -26,6 +26,15 @@ type Deps struct {
 	ModelRetries int           // model-call attempts before retries_exhausted
 	RetryBackoff time.Duration // base backoff between model attempts
 	Log          *slog.Logger
+	// Deltas fans ephemeral streaming fragments out to live SSE clients.
+	// Nil = no streaming; the loop uses Complete only.
+	Deltas DeltaPublisher
+}
+
+// DeltaPublisher is what the loop needs from the hub (consumer-side,
+// one method). *hub.Hub implements it.
+type DeltaPublisher interface {
+	Publish(sessionID uuid.UUID, d model.Delta)
 }
 
 func (d *Deps) maxSteps() int {
@@ -134,7 +143,7 @@ func Step(ctx context.Context, d *Deps, sessionID uuid.UUID) (Outcome, error) {
 		})
 	}
 
-	resp, err := completeWithRetries(ctx, d, req)
+	resp, err := completeWithRetries(ctx, d, sess.ID, req)
 	if err != nil {
 		if aerr := finishTurn(ctx, d, sess, store.StopRetriesExhausted, err.Error()); aerr != nil {
 			return OutcomeParked, aerr
@@ -143,13 +152,19 @@ func Step(ctx context.Context, d *Deps, sessionID uuid.UUID) (Outcome, error) {
 	}
 
 	// Idempotency rule: the assistant message (with the provider's stable
-	// tool_use ids) is persisted BEFORE any of its tools execute.
+	// tool_use ids) is persisted BEFORE any of its tools execute. The
+	// payload is marshaled explicitly — a marshal failure is an
+	// infrastructure error that parks loudly, never a silent {} event.
+	assistantPayload, err := json.Marshal(map[string]any{
+		"content": resp.Blocks,
+		"model":   cfg.Model,
+		"usage":   resp.Usage,
+	})
+	if err != nil {
+		return OutcomeParked, fmt.Errorf("marshal assistant message: %w", err)
+	}
 	_, err = d.Store.AppendEvent(ctx, sessionID, store.EventMessageAssistant, store.ActorAgent,
-		mustJSON(map[string]any{
-			"content": resp.Blocks,
-			"model":   cfg.Model,
-			"usage":   resp.Usage,
-		}))
+		json.RawMessage(assistantPayload))
 	if err != nil {
 		return OutcomeParked, err
 	}
@@ -291,7 +306,7 @@ func loadAgentConfig(ctx context.Context, d *Deps, sess *store.Session) (*agentC
 	return &cfg, nil
 }
 
-func completeWithRetries(ctx context.Context, d *Deps, req *model.CompletionRequest) (*model.CompletionResponse, error) {
+func completeWithRetries(ctx context.Context, d *Deps, sessionID uuid.UUID, req *model.CompletionRequest) (*model.CompletionResponse, error) {
 	retries := d.ModelRetries
 	if retries <= 0 {
 		retries = 3
@@ -300,9 +315,24 @@ func completeWithRetries(ctx context.Context, d *Deps, req *model.CompletionRequ
 	if backoff <= 0 {
 		backoff = 2 * time.Second
 	}
+	streamer, canStream := d.Model.(model.Streamer)
 	var lastErr error
 	for attempt := 0; attempt < retries; attempt++ {
-		resp, err := d.Model.Complete(ctx, req)
+		var resp *model.CompletionResponse
+		var err error
+		if canStream && d.Deltas != nil {
+			// Deltas are ephemeral: attempt > 1 after a failure gets a
+			// restart marker so live clients see the boundary instead
+			// of silently duplicated tokens.
+			if attempt > 0 {
+				d.Deltas.Publish(sessionID, model.Delta{Type: "restart"})
+			}
+			resp, err = streamer.Stream(ctx, req, func(dl model.Delta) {
+				d.Deltas.Publish(sessionID, dl)
+			})
+		} else {
+			resp, err = d.Model.Complete(ctx, req)
+		}
 		if err == nil {
 			return resp, nil
 		}

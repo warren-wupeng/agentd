@@ -61,6 +61,12 @@ func (s *Store) AppendEvent(ctx context.Context, sessionID uuid.UUID, eventType 
 	if _, err := tx.Exec(ctx, `UPDATE sessions SET updated_at = now() WHERE id = $1`, sessionID); err != nil {
 		return nil, agentderr.Internal(err)
 	}
+	// Notify inside the tx: pg_notify fires at commit, exactly when the
+	// event becomes visible — a tailer can never be woken ahead of the
+	// read (ADR-003's live-tail contract).
+	if _, err := tx.Exec(ctx, `SELECT pg_notify('agentd_events', $1)`, sessionID.String()); err != nil {
+		return nil, agentderr.Internal(err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, agentderr.Internal(err)
 	}

@@ -89,3 +89,19 @@ type CompletionResponse struct {
 type Provider interface {
 	Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
 }
+
+// Delta is one ephemeral streaming fragment — fanned out to live clients,
+// never written to the event log (docs/design/agent-loop.md, Streaming).
+type Delta struct {
+	Type string `json:"type"` // "text" | "restart"
+	Text string `json:"text,omitempty"`
+}
+
+// Streamer is the optional streaming capability: same contract as
+// Complete plus incremental text deltas via onDelta. The assembled
+// response is still returned — the log records facts, not fragments.
+// A model retry re-invokes Stream from the top; callers surface the
+// boundary with a "restart" delta.
+type Streamer interface {
+	Stream(ctx context.Context, req *CompletionRequest, onDelta func(Delta)) (*CompletionResponse, error)
+}

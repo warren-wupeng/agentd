@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warren-wupeng/agentd/internal/store"
@@ -315,5 +316,86 @@ func TestReplayAndClaim(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"late": true})
 	if _, err := st.AppendEvent(ctx, sess.ID, store.EventMessageUser, store.ActorUser, payload); err == nil {
 		t.Fatal("expected conflict appending to terminated session")
+	}
+}
+
+// ADR-003's live tail: an append must wake exactly the subscribers of
+// that session, and only after commit.
+func TestEventListenerWakesOnAppend(t *testing.T) {
+	url := testutil.DatabaseURL(t)
+	if err := store.Migrate(url, "up"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	listener, err := store.NewEventListener(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	st := testutil.NewStore(t)
+	a, _, err := st.CreateAgent(ctx, "notify", "", json.RawMessage(`{"model":"m"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, _, err := st.CreateSession(ctx, a.ID, 0, "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := st.CreateSession(ctx, a.ID, 0, "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wakeMine, cancelMine := listener.Subscribe(mine.ID.String())
+	defer cancelMine()
+	wakeOther, cancelOther := listener.Subscribe(other.ID.String())
+	defer cancelOther()
+
+	// A wake from a PREVIOUS append (session.created during CreateSession)
+	// may still be pending — drain both channels before the real append.
+	select {
+	case <-wakeMine:
+	default:
+	}
+	select {
+	case <-wakeOther:
+	default:
+	}
+
+	if _, err := st.AppendEvent(ctx, mine.ID, store.EventMessageUser, store.ActorUser,
+		json.RawMessage(`{"content":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Notification delivery is asynchronous — wait for it, briefly.
+	select {
+	case <-wakeMine:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no wake for the appended session")
+	}
+	select {
+	case <-wakeOther:
+		t.Fatal("wake leaked to an unrelated session")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Wakes coalesce: after a drain, a second append wakes again.
+	if _, err := st.AppendEvent(ctx, mine.ID, store.EventMessageUser, store.ActorUser,
+		json.RawMessage(`{"content":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-wakeMine:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second append did not wake")
+	}
+
+	// After unsubscribe: no wake, and Publish must not block the append.
+	cancelMine()
+	if _, err := st.AppendEvent(ctx, mine.ID, store.EventMessageUser, store.ActorUser,
+		json.RawMessage(`{"content":[]}`)); err != nil {
+		t.Fatal(err)
 	}
 }
