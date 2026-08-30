@@ -86,25 +86,41 @@ func run(m *testing.M) int {
 // (dead owner + verifiably free port) are reclaimed; the O_EXCL recreate
 // serializes concurrent reclaimers.
 func claimPort() (int, func(), error) {
+	pid := strconv.Itoa(os.Getpid())
 	for p := 25432; p < 25532; p++ {
 		lock := filepath.Join(os.TempDir(), fmt.Sprintf("agentd-test-pg-%d.lock", p))
-		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err != nil {
-			if errors.Is(err, os.ErrExist) && lockOwnerDead(lock) && portFree(p) {
-				_ = os.Remove(lock) // stale lock; retry this port
-				p--
+		if claimLock(lock, pid) {
+			if !portFree(p) {
+				_ = os.Remove(lock) // something else squats the port; move on
+				continue
 			}
-			continue
+			return p, func() { _ = os.Remove(lock) }, nil
 		}
-		_, _ = fmt.Fprint(f, os.Getpid())
-		_ = f.Close()
-		if !portFree(p) {
+		// Held by someone else. Steal only when the owner is provably dead
+		// AND the port is actually free — a dead owner can still leave an
+		// orphan postgres squatting the port, and a live owner whose
+		// postgres is not yet listening is indistinguishable from a crash
+		// by port probing alone.
+		if lockOwnerDead(lock) && portFree(p) {
 			_ = os.Remove(lock)
-			continue
+			p-- // retry the atomic claim on this port
 		}
-		return p, func() { _ = os.Remove(lock) }, nil
 	}
 	return 0, nil, errors.New("no free test postgres port in range 25432-25531")
+}
+
+// claimLock atomically publishes our PID via link(2): the temp file is
+// written completely before the link, and link fails if the target exists.
+// O_CREATE|O_EXCL alone leaves an empty-content window between create and
+// write that a parallel scanner reads as a stale lock — that race cost us
+// a CI run (two binaries, same port, same data dir, postmaster.pid FATAL).
+func claimLock(lock, pid string) bool {
+	tmp := fmt.Sprintf("%s.tmp.%s", lock, pid)
+	if err := os.WriteFile(tmp, []byte(pid), 0o600); err != nil {
+		return false
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	return os.Link(tmp, lock) == nil
 }
 
 // lockOwnerDead reports whether the process that wrote the lock no longer
