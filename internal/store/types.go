@@ -76,13 +76,18 @@ const (
 	ActorSystem Actor = "system"
 )
 
-// Event types known at M1. The vocabulary grows with M2+ (see
+// Event types known so far. The vocabulary grows with the milestones (see
 // docs/design/agent-loop.md); unknown types are rejected at the store so a
 // typo can never enter the log.
 const (
 	EventSessionCreated      = "session.created"
 	EventSessionStateChanged = "session.state_changed"
 	EventMessageUser         = "message.user"
+	EventMessageAssistant    = "message.assistant"
+	EventToolRequested       = "tool.requested"
+	EventToolCompleted       = "tool.completed"
+	EventToolFailed          = "tool.failed"
+	EventTurnCompleted       = "turn.completed"
 )
 
 // Event is one appended fact in a session's log (ADR-003).

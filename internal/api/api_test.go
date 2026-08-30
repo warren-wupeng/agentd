@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/api"
 	"github.com/warren-wupeng/agentd/internal/testutil"
 )
@@ -20,12 +22,32 @@ type server struct {
 
 func TestMain(m *testing.M) { testutil.Main(m) }
 
-func newServer(t *testing.T) *server {
+func newServer(t *testing.T, opts ...api.Option) *server {
 	t.Helper()
 	st := testutil.NewStore(t)
-	ts := httptest.NewServer(api.NewHandler(st))
+	ts := httptest.NewServer(api.NewHandler(st, opts...))
 	t.Cleanup(ts.Close)
 	return &server{t: t, ts: ts}
+}
+
+// recordingRunner is an api.Runner that records kicks instead of running
+// the loop — the API layer's contract is "the right session gets kicked",
+// not what the loop then does (loop_test covers that).
+type recordingRunner struct {
+	mu    sync.Mutex
+	kicks []string
+}
+
+func (r *recordingRunner) Kick(sessionID uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.kicks = append(r.kicks, sessionID.String())
+}
+
+func (r *recordingRunner) kicked() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.kicks...)
 }
 
 // do performs a request and fails the test on transport errors. Body may be nil.
@@ -285,4 +307,94 @@ func TestTransitionsOverHTTP(t *testing.T) {
 func errStr(resp map[string]any) string {
 	raw, _ := json.Marshal(resp)
 	return string(raw)
+}
+
+// G4: the run endpoint's replayable behavior is "kick the session actor,
+// never mutate state inline" — the actor owns transitions.
+
+func TestReplay_RunEndpointKicksActor(t *testing.T) {
+	rr := &recordingRunner{}
+	s := newServer(t, api.WithRunner(rr))
+	agentID := s.mustCreateAgent("run-api", "m2")
+	code, resp := s.do("POST", "/v1/sessions", map[string]any{"agent_id": agentID})
+	if code != http.StatusCreated {
+		t.Fatal(resp)
+	}
+	sessID := resp["session"].(map[string]any)["id"].(string)
+
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/run", nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("run: %d %v", code, resp)
+	}
+	if resp["accepted"] != true {
+		t.Fatalf("run response missing accepted: %v", resp)
+	}
+	// state untouched synchronously — the actor moves it asynchronously
+	if resp["session"].(map[string]any)["state"] != "rescheduling" {
+		t.Fatalf("run must not mutate state inline: %v", resp)
+	}
+
+	kicks := rr.kicked()
+	if len(kicks) != 1 || kicks[0] != sessID {
+		t.Fatalf("kicks = %v, want [%s]", kicks, sessID)
+	}
+}
+
+func TestRunEndpointWithoutRunnerIs409(t *testing.T) {
+	s := newServer(t) // no WithRunner
+	agentID := s.mustCreateAgent("norun-api", "m2")
+	code, resp := s.do("POST", "/v1/sessions", map[string]any{"agent_id": agentID})
+	if code != http.StatusCreated {
+		t.Fatal(resp)
+	}
+	sessID := resp["session"].(map[string]any)["id"].(string)
+
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/run", nil)
+	if code != http.StatusConflict {
+		t.Fatalf("run without loop: %d %v", code, resp)
+	}
+	if e, ok := resp["error"].(map[string]any); !ok || e["remediation"] == nil {
+		t.Fatalf("error must carry a remediation: %v", resp)
+	}
+}
+
+func TestMessageAppendAutoKicksNativeSession(t *testing.T) {
+	rr := &recordingRunner{}
+	s := newServer(t, api.WithRunner(rr))
+	agentID := s.mustCreateAgent("auto-api", "m2")
+	code, resp := s.do("POST", "/v1/sessions", map[string]any{"agent_id": agentID})
+	if code != http.StatusCreated {
+		t.Fatal(resp)
+	}
+	sessID := resp["session"].(map[string]any)["id"].(string)
+
+	code, resp = s.do("POST", "/v1/sessions/"+sessID+"/events", map[string]any{
+		"payload": map[string]any{"content": []map[string]any{
+			{"type": "text", "text": "hello"},
+		}},
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("append: %d %v", code, resp)
+	}
+	kicks := rr.kicked()
+	if len(kicks) != 1 || kicks[0] != sessID {
+		t.Fatalf("auto-kick = %v, want [%s]", kicks, sessID)
+	}
+
+	// terminated sessions never get kicked again
+	code, _ = s.do("POST", "/v1/sessions/"+sessID+"/transitions", map[string]any{"to": "terminated"})
+	if code != http.StatusOK {
+		t.Fatal("terminate failed")
+	}
+	code, _ = s.do("POST", "/v1/sessions/"+sessID+"/events", map[string]any{
+		"payload": map[string]any{"content": []map[string]any{
+			{"type": "text", "text": "too late"},
+		}},
+	})
+	if code != http.StatusConflict { // terminated log is immutable → error, no kick
+		t.Fatalf("append to terminated: %d", code)
+	}
+	if n := len(rr.kicked()); n != 1 {
+		t.Fatalf("kicks after termination = %d, want 1", n)
+	}
 }

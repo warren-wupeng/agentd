@@ -50,6 +50,18 @@ func (h *handler) appendEvent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+
+	// A user message on a native session wakes the actor (if the loop is
+	// wired and the session can still run). Failures here never fail the
+	// append — the event is durable; the actor can always be re-kicked
+	// via POST /v1/sessions/{id}/run.
+	if h.runner != nil && eventType == store.EventMessageUser {
+		if sess, err := h.st.GetSession(r.Context(), id); err == nil &&
+			sess.State != store.StateTerminated && sess.Harness == "native" {
+			h.runner.Kick(id)
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"event": ev})
 }
 

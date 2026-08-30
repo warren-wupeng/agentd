@@ -10,6 +10,11 @@ allow:
 components:
   cmd:        { in: cmd/** }
   api:        { in: internal/api/** }
+  loop:       { in: internal/loop/** }
+  model:      { in: internal/model/** }
+  tools:      { in: internal/tools/** }
+  sandbox:    { in: internal/sandbox/** }
+  policy:     { in: internal/policy/** }
   store:      { in: internal/store/** }
   config:     { in: internal/config/** }
   agentderr:  { in: internal/agentderr/** }
@@ -22,8 +27,10 @@ commonComponents:
 
 # Components absent from deps may import nothing but commonComponents.
 deps:
-  cmd:      { mayDependOn: [api, store, config] }
-  api:      { mayDependOn: [store] }
+  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy] }
+  api:      { mayDependOn: [store, loop] } # loop: the Runner seam (deepScan sees the wiring)
+  loop:     { mayDependOn: [store, model, tools, sandbox, policy] }
+  tools:    { mayDependOn: [sandbox, policy] }
   store:    { mayDependOn: [migrations] }
   testutil: { mayDependOn: [store] }
 

@@ -14,9 +14,29 @@ import (
 	"github.com/warren-wupeng/agentd/internal/store"
 )
 
+// Runner is what the API needs from the loop: schedule the actor for a
+// session. Defined here (consumer side) so api depends on the seam, not
+// on loop's implementation — but the dependency is real and declared in
+// .go-arch-lint.yml.
+type Runner interface {
+	Kick(sessionID uuid.UUID)
+}
+
+// Option configures NewHandler.
+type Option func(*handler)
+
+// WithRunner enables the native loop: message.user appends auto-kick the
+// session actor, and POST /v1/sessions/{id}/run becomes available.
+func WithRunner(r Runner) Option {
+	return func(h *handler) { h.runner = r }
+}
+
 // NewHandler builds the full route table (Go 1.22 method+pattern mux).
-func NewHandler(st *store.Store) http.Handler {
+func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	h := &handler{st: st}
+	for _, o := range opts {
+		o(h)
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", h.healthz)
@@ -36,12 +56,14 @@ func NewHandler(st *store.Store) http.Handler {
 	mux.HandleFunc("POST /v1/sessions/{id}/events", h.appendEvent)
 	mux.HandleFunc("GET /v1/sessions/{id}/events", h.listEvents)
 	mux.HandleFunc("POST /v1/sessions/{id}/events/{eventId}/claim", h.claimEvent)
+	mux.HandleFunc("POST /v1/sessions/{id}/run", h.runSession)
 
 	return requestLogger(mux)
 }
 
 type handler struct {
-	st *store.Store
+	st     *store.Store
+	runner Runner // nil: CRUD-only process, no loop wired
 }
 
 func (h *handler) healthz(w http.ResponseWriter, r *http.Request) {

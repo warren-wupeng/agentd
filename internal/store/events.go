@@ -12,12 +12,17 @@ import (
 
 const eventCols = "id, session_id, seq, type, actor, payload, processed_at, created_at"
 
-// knownEventTypes is the M1 vocabulary. Closed on purpose: a typo'd type in
-// the log would poison replay, so the store refuses unknown types.
+// knownEventTypes is the closed vocabulary. Closed on purpose: a typo'd type
+// in the log would poison replay, so the store refuses unknown types.
 var knownEventTypes = map[string]bool{
 	EventSessionCreated:      true,
 	EventSessionStateChanged: true,
 	EventMessageUser:         true,
+	EventMessageAssistant:    true,
+	EventToolRequested:       true,
+	EventToolCompleted:       true,
+	EventToolFailed:          true,
+	EventTurnCompleted:       true,
 }
 
 // AppendEvent adds one event and bumps the session's updated_at, atomically.
@@ -26,7 +31,7 @@ func (s *Store) AppendEvent(ctx context.Context, sessionID uuid.UUID, eventType 
 	if !knownEventTypes[eventType] {
 		return nil, agentderr.InvalidInput(
 			"unknown event type "+eventType,
-			"M1 vocabulary: session.created, session.state_changed, message.user")
+			"known types: session.created, session.state_changed, message.user, message.assistant, tool.requested, tool.completed, tool.failed, turn.completed")
 	}
 
 	tx, err := s.pool.Begin(ctx)
