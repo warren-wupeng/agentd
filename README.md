@@ -86,6 +86,8 @@ Explicitly later: sub-agent threads, outcome loops, memory stores, webhooks — 
 
 ## Planned layout
 
+Control plane in **Go**; console in Node.js + React; SDKs in TypeScript and Python. Agents working in this repo start at [`AGENTS.md`](./AGENTS.md).
+
 ```
 cmd/agentd-server/     # control-plane API
 internal/orchestrator/ # agent loop, session state machine
@@ -98,12 +100,12 @@ internal/telemetry/    # OTel tracing
 sdk/ts/  sdk/python/   # client SDKs (stream-first by default)
 console/               # web console (Node.js BFF + React)
 deploy/compose/  deploy/helm/
-docs/adr/              # architecture decision records
+docs/                  # system of record: adr/, design/, research/, exec-plans/, GOLDEN.md
 ```
 
 ## Contributing
 
-At design stage the most valuable contribution is critique: open an issue if a design decision above looks wrong, under-specified, or like it's solving a problem nobody has. Settled decisions live in [`docs/adr/`](./docs/adr/) — read them before proposing a competing design. Code contributions open up at M1.
+At design stage the most valuable contribution is critique: open an issue if a design decision above looks wrong, under-specified, or like it's solving a problem nobody has. Settled decisions live in [`docs/adr/`](./docs/adr/) — read them before proposing a competing design. Working designs live in [`docs/design/`](./docs/design/); how we build (agent-first, harness engineering) is in [`docs/design/harness-engineering.md`](./docs/design/harness-engineering.md). Code contributions open up at M1 — see [`docs/exec-plans/active/`](./docs/exec-plans/active/).
 
 ## License
 
