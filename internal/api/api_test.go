@@ -2,9 +2,11 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,7 +14,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/api"
+	"github.com/warren-wupeng/agentd/internal/harness"
+	"github.com/warren-wupeng/agentd/internal/sandbox"
 	"github.com/warren-wupeng/agentd/internal/testutil"
+	"github.com/warren-wupeng/agentd/internal/workflow"
 )
 
 type server struct {
@@ -150,6 +155,21 @@ func TestAgentVersioningOverHTTP(t *testing.T) {
 	}
 }
 
+func newWorkflowOption(t *testing.T) api.Option {
+	t.Helper()
+	st := testutil.NewStore(t)
+	sb, err := sandbox.NewExec(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := workflow.NewExecutor(context.Background(), testutil.DatabaseURL(t), st, sb, slog.Default(), harness.NewStub("native"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ex.Close() })
+	return api.WithWorkflow(ex)
+}
+
 func TestDeleteAgentOverHTTP(t *testing.T) {
 	s := newServer(t)
 	id := s.mustCreateAgent("deletable", "m1")
@@ -175,6 +195,39 @@ func TestDeleteAgentOverHTTP(t *testing.T) {
 // TestReplay_SessionEventLog is the G4 replay test for the events endpoint:
 // kill the flow mid-run (here: replay from a mid-log cursor), reconnect,
 // and assert the client sees an ordered, lossless, idempotent history.
+func TestWorkflowListOverHTTP(t *testing.T) {
+	s := newServer(t, newWorkflowOption(t))
+	a1 := s.mustCreateAgent("wf-a", "m1")
+	a2 := s.mustCreateAgent("wf-b", "m1")
+	defs := []string{
+		fmt.Sprintf(`{"name":"older","nodes":[{"id":"n1","agent":%q,"prompt":"do one"}]}`, a1),
+		fmt.Sprintf(`{"name":"newer","nodes":[{"id":"n2","agent":%q,"prompt":"do two"}]}`, a2),
+	}
+	for _, def := range defs {
+		code, resp := s.do("POST", "/v1/workflows", json.RawMessage(def))
+		if code != http.StatusAccepted {
+			t.Fatalf("start workflow: %d %v", code, resp)
+		}
+	}
+
+	code, resp := s.do("GET", "/v1/workflows?limit=1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list workflows: %d %v", code, resp)
+	}
+	runs := resp["runs"].([]any)
+	if len(runs) != 1 {
+		t.Fatalf("want 1 run, got %d", len(runs))
+	}
+	if runs[0].(map[string]any)["name"] != "newer" {
+		t.Fatalf("want newest workflow first, got %v", runs[0])
+	}
+
+	code, resp = s.do("GET", "/v1/workflows?limit=0", nil)
+	if code != http.StatusBadRequest || resp["error"].(map[string]any)["remediation"] == "" {
+		t.Fatalf("want 400 with remediation for bad limit, got %d %v", code, resp)
+	}
+}
+
 func TestReplay_SessionEventLog(t *testing.T) {
 	s := newServer(t)
 	agentID := s.mustCreateAgent("replay-api", "m1")

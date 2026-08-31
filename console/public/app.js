@@ -152,7 +152,7 @@ async function viewOverview(root) {
   const [{ agents }, { sessions }, runs] = await Promise.all([
     api.req("GET", "/v1/agents?limit=100"),
     api.req("GET", "/v1/sessions?limit=100"),
-    Promise.resolve(wfRuns()),
+    wfRuns(),
   ]);
   const running = sessions.filter((s) => s.state === "running" || s.state === "rescheduling").length;
   const agentsById = new Map(agents.map((a) => [a.id, a]));
@@ -661,8 +661,22 @@ const WF_TEMPLATE = {
   ],
 };
 
-function wfRuns() {
+function wfRunCache() {
   try { return JSON.parse(localStorage.getItem("agentd.wf.runs") || "[]"); } catch { return []; }
+}
+function rememberWorkflowRun(run) {
+  const cache = wfRunCache().filter((r) => r.id !== run.id);
+  cache.unshift({ id: run.id, name: run.name, ts: run.created_at || run.ts || new Date().toISOString(), status: run.status });
+  localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
+}
+async function wfRuns(limit = 20) {
+  try {
+    const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
+    runs.forEach(rememberWorkflowRun);
+    return runs.map((run) => ({ ...run, ts: run.created_at || run.ts }));
+  } catch {
+    return wfRunCache();
+  }
 }
 function wfRunStatuses(runs) { return runs.map((r) => r.status || "?"); }
 
@@ -706,7 +720,7 @@ async function viewWorkflows(root) {
         n.prompt = n.prompt.replace("{{spec}}", spec);
       }
       const { run } = await api.req("POST", "/v1/workflows", def);
-      rememberRun({ id: run.id, name: run.name, ts: new Date().toISOString() });
+      rememberWorkflowRun(run);
       toast("流水线已启动 " + short(run.id), "ok");
       selectRun(run.id);
     } catch (err) { apiErr(err); }
@@ -715,19 +729,13 @@ async function viewWorkflows(root) {
 
   let wfSelected = null, wfPoll = null;
 
-  renderRunList();
-  const last = wfRuns()[0];
-  if (last) selectRun(last.id);
+  await renderRunList();
+  const initialRuns = await wfRuns();
+  if (initialRuns[0]) selectRun(initialRuns[0].id);
 
-  function rememberRun(r) {
-    const runs = wfRuns();
-    runs.unshift(r);
-    localStorage.setItem("agentd.wf.runs", JSON.stringify(runs.slice(0, 20)));
-    renderRunList();
-  }
-  function renderRunList() {
+  async function renderRunList() {
     const box = $("#wf-runs");
-    const runs = wfRuns();
+    const runs = await wfRuns();
     box.innerHTML = "<h3>运行历史</h3>" + (runs.length ? "" : "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>");
     for (const r of runs) {
       const el = document.createElement("div");
@@ -746,8 +754,10 @@ async function viewWorkflows(root) {
     const draw = async () => {
       let run;
       try { ({ run } = await api.req("GET", `/v1/workflows/${runId}`)); } catch { return; }
+      rememberWorkflowRun(run);
       if (wfSelected !== runId) return;
       renderDag(run);
+      renderRunList();
       if (run.status !== "running") clearInterval(wfPoll);
     };
     await draw();
@@ -844,7 +854,13 @@ async function healthPoll() {
   const dot = $("#conn-dot"), txt = $("#conn-text");
   const tick = async () => {
     try {
-      await fetch("/api/healthz", { signal: AbortSignal.timeout(3000) });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      try {
+        await fetch("/api/healthz", { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
       dot.className = "dot ok";
       txt.textContent = "API 已连接";
     } catch {

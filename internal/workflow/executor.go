@@ -95,18 +95,54 @@ func (e *Executor) Start(ctx context.Context, raw []byte) (*Run, error) {
 
 // Get loads one run.
 func (e *Executor) Get(ctx context.Context, id uuid.UUID) (*Run, error) {
-	var name, status string
-	var defRaw, statesRaw []byte
-	err := e.pool.QueryRow(ctx,
-		`SELECT name, status, definition, node_states FROM workflow_runs WHERE id = $1`, id).
-		Scan(&name, &status, &defRaw, &statesRaw)
+	rows, err := e.List(ctx, 1, &id)
 	if err != nil {
-		return nil, agentderr.NotFound("workflow run "+id.String()+" not found", "list runs via the console or create one via POST /v1/workflows")
+		return nil, err
 	}
-	run := &Run{ID: id.String(), Name: name, Status: status}
-	_ = json.Unmarshal(defRaw, &run.Definition)
-	_ = json.Unmarshal(statesRaw, &run.NodeStates)
-	return run, nil
+	if len(rows) == 0 {
+		return nil, agentderr.NotFound("workflow run "+id.String()+" not found", "list runs via GET /v1/workflows or create one via POST /v1/workflows")
+	}
+	return rows[0], nil
+}
+
+// List returns workflow runs newest-first. When id is set, it returns at most
+// the matching run while reusing the same row decoding as the general list path.
+func (e *Executor) List(ctx context.Context, limit int, id *uuid.UUID) ([]*Run, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	args := []any{}
+	where := ""
+	if id != nil {
+		args = append(args, *id)
+		where = " WHERE id = $1"
+	}
+	args = append(args, limit)
+	rows, err := e.pool.Query(ctx,
+		`SELECT id, name, status, definition, node_states FROM workflow_runs`+where+
+		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return nil, agentderr.Internal(err)
+	}
+	defer rows.Close()
+
+	var out []*Run
+	for rows.Next() {
+		var run Run
+		var runID uuid.UUID
+		var defRaw, statesRaw []byte
+		if err := rows.Scan(&runID, &run.Name, &run.Status, &defRaw, &statesRaw); err != nil {
+			return nil, agentderr.Internal(err)
+		}
+		run.ID = runID.String()
+		_ = json.Unmarshal(defRaw, &run.Definition)
+		_ = json.Unmarshal(statesRaw, &run.NodeStates)
+		out = append(out, &run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, agentderr.Internal(err)
+	}
+	return out, nil
 }
 
 func (e *Executor) persist(ctx context.Context, run *Run) error {
