@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentd console</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>agentd</h1>
+  <span class="sub">harness-agnostic managed agents</span>
+  <nav>
+    <button data-tab="agents" class="active">Agents</button>
+    <button data-tab="session">Session</button>
+    <button data-tab="workflow">Workflow</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-agents" class="tab">
+    <div class="panel">
+      <h2>Create agent</h2>
+      <form id="agent-form">
+        <label>name <input name="name" required placeholder="coder"></label>
+        <label>model <input name="model" required placeholder="google/gemini-3.5-flash"></label>
+        <label>system prompt <textarea name="system_prompt" rows="3" placeholder="You are a careful coding agent..."></textarea></label>
+        <button type="submit">Create</button>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Agents</h2>
+      <table id="agents-table">
+        <thead><tr><th>name</th><th>id</th><th>latest</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-session" class="tab" hidden>
+    <div class="panel">
+      <h2>Session</h2>
+      <select id="session-select"></select>
+      <button id="session-new">new session (latest agent)</button>
+      <form id="message-form">
+        <input name="text" placeholder="send a message..." required>
+        <button type="submit">Send</button>
+      </form>
+      <div class="state" id="session-state"></div>
+    </div>
+    <div class="panel log-panel">
+      <h2>Event stream <span class="hint">live (SSE) — log frames carry the reconnect cursor</span></h2>
+      <pre id="session-log"></pre>
+    </div>
+  </section>
+
+  <section id="tab-workflow" class="tab" hidden>
+    <div class="panel">
+      <h2>Run software-dev</h2>
+      <p class="hint">coder → (reviewer ∥ tester) → merger — spec in, merged artifact out.</p>
+      <label>agent <select id="wf-agent"></select></label>
+      <label>spec <textarea id="wf-spec" rows="5" placeholder="Write a Python function fib(n) (iterative) in solution.py..."></textarea></label>
+      <button id="wf-run">Run workflow</button>
+      <div id="wf-status"></div>
+    </div>
+    <div class="panel">
+      <h2>Node board</h2>
+      <div id="wf-nodes" class="nodes"></div>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -18,6 +18,7 @@ components:
   hub:        { in: internal/hub/** }
   harness:    { in: internal/harness/** }
   eval:       { in: internal/eval/** }
+  workflow:   { in: internal/workflow/** }
   vault:      { in: internal/vault/** }
   mcp:        { in: internal/mcp/** }
   store:      { in: internal/store/** }
@@ -32,12 +33,13 @@ commonComponents:
 
 # Components absent from deps may import nothing but commonComponents.
 deps:
-  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub, harness, vault, mcp, eval] }
-  api:      { mayDependOn: [store, loop, hub, harness, vault, mcp] } # wiring-level seams: loop Runner, harness Dispatcher (deepScan sees the cmd wiring)
+  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub, harness, vault, mcp, eval, workflow] }
+  api:      { mayDependOn: [store, loop, hub, harness, vault, mcp, workflow] } # wiring-level seams: loop Runner, harness Dispatcher (deepScan sees the cmd wiring)
   loop:     { mayDependOn: [store, model, tools, sandbox, policy] }
   hub:      { mayDependOn: [model] } # Delta type only — fan-out carries model fragments
   harness:  { mayDependOn: [store, model, policy, loop] } # native wraps loop; adapters normalize into store events
   eval:     { mayDependOn: [store, harness, sandbox, model] } # runs the product machinery; no vault/mcp (no credentials in evals)
+  workflow: { mayDependOn: [store, harness, sandbox, model] } # nodes are sessions on the seam; no vault/mcp
   vault:    { anyVendorDeps: true } # G2: secrets live ONLY here — zero project deps, minimal surface
   mcp:      { mayDependOn: [vault, agentderr] } # injects vault credentials into outbound requests
   tools:    { mayDependOn: [sandbox, policy, mcp] } # mcp: wiring-level — WithMCP(mcpSvc) in cmd; imports stay one-way via MCPCaller interface

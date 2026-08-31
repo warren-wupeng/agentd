@@ -1,0 +1,67 @@
+/* agentd console — deliberately plain. Dark, monospaced, no framework. */
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  background: #0d1117; color: #c9d1d9; font-size: 14px;
+}
+header {
+  display: flex; align-items: baseline; gap: 12px; padding: 14px 20px;
+  border-bottom: 1px solid #21262d; background: #161b22;
+}
+header h1 { margin: 0; font-size: 18px; color: #58a6ff; }
+header .sub { color: #8b949e; font-size: 12px; }
+nav { margin-left: auto; display: flex; gap: 8px; }
+nav button {
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 14px; cursor: pointer; font: inherit;
+}
+nav button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+.tab { display: grid; gap: 16px; }
+.panel {
+  background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px;
+}
+.panel h2 { margin: 0 0 12px; font-size: 14px; color: #58a6ff; }
+.hint { color: #8b949e; font-size: 12px; font-weight: normal; }
+form label, .panel > label { display: block; margin-bottom: 10px; font-size: 12px; color: #8b949e; }
+input, textarea, select {
+  display: block; width: 100%; margin-top: 4px; padding: 8px;
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px;
+  font: inherit;
+}
+form .row { display: flex; gap: 8px; }
+button {
+  background: #238636; color: #fff; border: none; border-radius: 6px;
+  padding: 8px 16px; cursor: pointer; font: inherit;
+}
+button:disabled { background: #21262d; color: #8b949e; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #21262d; font-size: 13px; }
+th { color: #8b949e; font-weight: normal; }
+td.mono { color: #8b949e; font-size: 12px; }
+.state { margin-top: 10px; color: #8b949e; }
+.state b { color: #58a6ff; }
+.log-panel pre {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+  padding: 12px; max-height: 480px; overflow-y: auto; white-space: pre-wrap;
+  word-break: break-word; font-size: 12px; margin: 0;
+}
+.log-line { margin-bottom: 2px; }
+.log-line .seq { color: #8b949e; }
+.log-line .type { color: #58a6ff; font-weight: bold; }
+.log-line.user .type { color: #d29922; }
+.log-line.tool .type { color: #3fb950; }
+.log-line.delta { color: #8b949e; font-style: italic; }
+.nodes { display: grid; gap: 8px; }
+.node {
+  display: flex; gap: 12px; align-items: center; padding: 10px 12px;
+  border: 1px solid #21262d; border-radius: 6px; background: #0d1117;
+}
+.node .id { font-weight: bold; width: 90px; }
+.node .status { width: 100px; }
+.status.pending { color: #8b949e; }
+.status.running { color: #d29922; }
+.status.completed { color: #3fb950; }
+.status.failed { color: #f85149; }
+.node .meta { color: #8b949e; font-size: 12px; flex: 1; }
+.error { color: #f85149; margin-top: 8px; }

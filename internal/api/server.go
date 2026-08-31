@@ -15,6 +15,7 @@ import (
 	"github.com/warren-wupeng/agentd/internal/mcp"
 	"github.com/warren-wupeng/agentd/internal/store"
 	"github.com/warren-wupeng/agentd/internal/vault"
+	"github.com/warren-wupeng/agentd/internal/workflow"
 )
 
 // Runner is what the API needs from the loop: schedule the actor for a
@@ -57,6 +58,12 @@ func WithVaultMCP(v *vault.Vault, m *mcp.MCP) Option {
 	return func(h *handler) { h.vault = v; h.mcp = m }
 }
 
+// WithWorkflow enables the DAG endpoints (M8). The executor is a
+// concrete dependency — unlike loop/harness there is no cycle risk.
+func WithWorkflow(wf *workflow.Executor) Option {
+	return func(h *handler) { h.workflow = wf }
+}
+
 // NewHandler builds the full route table (Go 1.22 method+pattern mux).
 func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	h := &handler{st: st}
@@ -92,6 +99,9 @@ func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	mux.HandleFunc("GET /v1/mcp/servers", h.listMCPServers)
 	mux.HandleFunc("POST /v1/sessions/{id}/mcp/{server}", h.mcpProxy)
 
+	mux.HandleFunc("POST /v1/workflows", h.startWorkflow)
+	mux.HandleFunc("GET /v1/workflows/{id}", h.getWorkflow)
+
 	return requestLogger(mux)
 }
 
@@ -103,6 +113,7 @@ type handler struct {
 	harnesses map[string]bool      // nil: native only
 	vault     *vault.Vault         // nil: credential plane disabled
 	mcp       *mcp.MCP             // nil: credential plane disabled
+	workflow  *workflow.Executor   // nil: DAG endpoints disabled
 }
 
 func (h *handler) healthz(w http.ResponseWriter, r *http.Request) {

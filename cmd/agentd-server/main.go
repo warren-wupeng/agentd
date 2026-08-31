@@ -33,6 +33,7 @@ import (
 	"github.com/warren-wupeng/agentd/internal/store"
 	"github.com/warren-wupeng/agentd/internal/tools"
 	"github.com/warren-wupeng/agentd/internal/vault"
+	"github.com/warren-wupeng/agentd/internal/workflow"
 )
 
 func main() {
@@ -67,8 +68,12 @@ func run(args []string) error {
 		return runEval(args[1:])
 	case "eval-export":
 		return runEvalExport(args[1:])
+	case "workflow":
+		return runWorkflowCmd(args[1:])
+	case "workflow-status":
+		return runWorkflowStatus(args[1:])
 	default:
-		return agentderr.InvalidInput("unknown command "+cmd, "valid commands: serve, migrate, eval, eval-export")
+		return agentderr.InvalidInput("unknown command "+cmd, "valid commands: serve, migrate, eval, eval-export, workflow, workflow-status")
 	}
 }
 
@@ -157,6 +162,14 @@ func serve(cfg *config.Config) error {
 			api.WithRunner(dispatcher),
 			api.WithStream(deltas, listener),
 			api.WithHarnesses(dispatcher.Names()))
+
+		// The workflow executor (M8): same harnesses, same sandboxes.
+		wfExec, err := workflow.NewExecutor(ctx, cfg.DatabaseURL, st, sb, slog.Default(), hs...)
+		if err != nil {
+			return fmt.Errorf("workflow executor: %w", err)
+		}
+		defer wfExec.Close()
+		opts = append(opts, api.WithWorkflow(wfExec))
 		// ctx cancellation (SIGINT/SIGTERM) stops in-flight actors at
 		// their next checkpoint; Wait drains them before exit.
 		defer dispatcher.Wait()

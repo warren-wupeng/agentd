@@ -1,0 +1,29 @@
+{
+  "name": "software-dev",
+  "nodes": [
+    {
+      "id": "coder",
+      "agent": "AGENT_ID",
+      "prompt": "You are the coder in a software pipeline. Implement the following spec as one complete file named solution.py. Respond with a one-paragraph summary of your design choices.\n\nSPEC:\n{{spec}}",
+      "output_files": ["solution.py"]
+    },
+    {
+      "id": "reviewer",
+      "agent": "AGENT_ID",
+      "depends_on": ["coder"],
+      "prompt": "You are the code reviewer. Review this code for correctness and style. Name at most two concrete improvements. Be specific and brief.\n\nCODE:\n{{files.coder.solution.py}}"
+    },
+    {
+      "id": "tester",
+      "agent": "AGENT_ID",
+      "depends_on": ["coder"],
+      "prompt": "You are the test engineer. Write a minimal test plan (3 bullets) for this code, then state PASS or FAIL with one sentence of rationale.\n\nCODE:\n{{files.coder.solution.py}}"
+    },
+    {
+      "id": "merger",
+      "agent": "AGENT_ID",
+      "depends_on": ["reviewer", "tester"],
+      "prompt": "You are the merger. Produce the final merged artifact: write the file MERGED.md containing (1) the final code, (2) the review notes you incorporated or rejected with reasons, (3) the test verdict. Use the write_file tool to write MERGED.md, then summarize in one sentence.\n\nORIGINAL CODE:\n{{files.coder.solution.py}}\n\nREVIEW:\n{{outputs.reviewer}}\n\nTEST VERDICT:\n{{outputs.tester}}"
+    }
+  ]
+}
