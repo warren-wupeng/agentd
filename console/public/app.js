@@ -446,12 +446,14 @@ async function selectSession(sessionId) {
 
 async function fetchSessionEvents(sessionId, limit = 300) {
   const events = [];
-  let offset = 0;
+  let afterSeq = 0;
   while (true) {
-    const { events: page = [] } = await api.req("GET", `/v1/sessions/${sessionId}/events?offset=${offset}&limit=${limit}`);
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (afterSeq > 0) params.set("after_seq", String(afterSeq));
+    const { events: page = [], next_after_seq: nextAfterSeq = null } = await api.req("GET", `/v1/sessions/${sessionId}/events?${params.toString()}`);
     events.push(...page);
-    if (page.length < limit) break;
-    offset += page.length;
+    if (!page.length || nextAfterSeq == null || nextAfterSeq <= afterSeq) break;
+    afterSeq = nextAfterSeq;
   }
   return events;
 }
