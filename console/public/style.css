@@ -269,6 +269,15 @@ input:focus, textarea:focus, select:focus {
   background: linear-gradient(135deg, #4c5fd7, #6a4fd0);
   border-bottom-right-radius: 4px; color: #fff;
 }
+.msg.user.failed .bubble {
+  background: linear-gradient(135deg, rgba(239, 93, 106, 0.95), rgba(166, 54, 74, 0.95));
+}
+.msg.user .msg-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--red);
+  text-align: right;
+}
 .msg.agent { align-self: flex-start; }
 .msg.agent .who {
   width: 28px; height: 28px; border-radius: 8px; flex: none; margin-top: 2px;

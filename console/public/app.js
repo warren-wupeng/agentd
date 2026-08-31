@@ -329,6 +329,7 @@ function agentCreateModal(done) {
 let currentDetail = null; // { id, es, pollState, maxSeq }
 let optimisticSeq = 0;
 let optimisticMessageSeq = 0;
+const optimisticMessages = new Map();
 
 async function viewSessions(root, sessionId) {
   root.innerHTML = `
@@ -581,12 +582,17 @@ function renderEventBody(ev) {
     const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
     const optimisticId = p.client_message_id || null;
     if (optimisticId) {
-      const existing = tr.querySelector(`.msg.user[data-optimistic="1"][data-optimistic-id="${CSS.escape(optimisticId)}"]`);
-      if (existing) {
+      const existing = optimisticMessages.get(optimisticId);
+      if (existing?.isConnected) {
         existing.dataset.optimistic = "0";
         existing.removeAttribute("data-optimistic-id");
+        existing.classList.remove("failed");
+        const hint = existing.querySelector(".msg-hint");
+        if (hint) hint.remove();
+        optimisticMessages.delete(optimisticId);
         return;
       }
+      optimisticMessages.delete(optimisticId);
     }
     const m = document.createElement("div");
     m.className = "msg user";
@@ -682,7 +688,12 @@ function bindComposer(sessionId, applySessionMeta) {
         type: "message.user",
         payload: { content: [{ type: "text", text }], client_message_id: optimisticId },
       });
-      await api.req("POST", `/v1/sessions/${sessionId}/run`).catch(() => {});
+      try {
+        await api.req("POST", `/v1/sessions/${sessionId}/run`);
+      } catch (err) {
+        markOptimisticUserMessageFailed(optimisticId);
+        apiErr(err);
+      }
     } catch (err) {
       removeOptimisticUserMessage(optimisticId);
       apiErr(err);
@@ -718,12 +729,30 @@ function renderOptimisticUserMessage(text, optimisticId) {
   m.dataset.localOrder = String(++optimisticSeq);
   m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
   tr.appendChild(m);
+  optimisticMessages.set(optimisticId, m);
   scrollBottom();
 }
 
+function markOptimisticUserMessageFailed(optimisticId) {
+  const el = optimisticMessages.get(optimisticId);
+  if (!el?.isConnected) {
+    optimisticMessages.delete(optimisticId);
+    return;
+  }
+  el.classList.add("failed");
+  let hint = el.querySelector(".msg-hint");
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.className = "msg-hint";
+    hint.textContent = "未能启动运行，请重试";
+    el.appendChild(hint);
+  }
+}
+
 function removeOptimisticUserMessage(optimisticId) {
-  const tr = $("#tr");
-  tr?.querySelector(`.msg.user[data-optimistic="1"][data-optimistic-id="${CSS.escape(optimisticId)}"]`)?.remove();
+  const el = optimisticMessages.get(optimisticId);
+  if (el?.isConnected) el.remove();
+  optimisticMessages.delete(optimisticId);
 }
 
 /* ================= workflows ================= */
