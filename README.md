@@ -87,14 +87,6 @@ All eight milestones are **shipped** (M1–M8, 2026-08-30 → 2026-08-31); every
 | **M6** | Vault + MCP credential proxy + minimal TS/Python SDK | Agent calls an MCP server with zero secrets in the sandbox | ✅ proven mechanically (zero traces) |
 | **M7** | Eval harness v0: trace → dataset → rubric scorer → version-compare report | Two agent versions scored on the same dataset, diff printed | ✅ met mechanically + live |
 | **M8** | Workflow DAG v0 + software-dev flow template (code → review → test → merge) + web console (Node.js) | Demo: spec in → parallel harness workers → merged artifact out | ✅ met live (parallelism log-proven) |
-| **M1** | Postgres schema; agents/sessions/events CRUD; agent versioning | API tests pass |
-| **M2** | Native agent loop (`harness: native`); bash/read/write/edit tools; single-Docker sandbox | One session runs read → edit → exec end-to-end |
-| **M3** | SSE event stream + history replay + `processed_at` + idle/`stop_reason` state machine | `kill -9` the client mid-run, reconnect, nothing lost |
-| **M4** | `Harness` adapter seam + first external adapter (OpenCode) + golden-transcript conformance suite | Same task driven by native and OpenCode produces the same normalized event stream |
-| **M5** | E2B sandbox backend + network policy enforcement | Sandbox escape test suite passes |
-| **M6** | Vault + MCP credential proxy + minimal TS/Python SDK | Agent calls an MCP server with zero secrets in the sandbox |
-| **M7** | Eval harness v0: trace → dataset → rubric scorer → version-compare report | Two agent versions scored on the same dataset, diff printed |
-| **M8** | Workflow DAG v0 + software-dev flow template (code → review → test → merge) + web console (Node.js) | Demo: spec in → parallel harness workers → merged artifact out |
 
 Explicitly later: general-purpose workflow features, more adapters (deepseek-harness, pi, Codex), memory stores, webhooks — gated on what the first real users actually hit, in that order.
 
