@@ -91,3 +91,18 @@ sandbox; the native path holds the stronger line (zero everything).
 ## Progress log
 
 - 2026-08-31: plan created. No code yet.
+- 2026-08-31: **M6 done.** vault (AES-256-GCM, write-only values,
+  derived session tokens, own pool), mcp registry + credential-injecting
+  proxy (no redirects, capped responses), native `mcp` tool
+  (control-plane execution), API endpoints (vault CRUD write-only,
+  registry, session proxy with token enforcement + terminated-session
+  rejection), migration 0002, and the two zero-dependency SDKs
+  (node --check + py_compile in CI). All suites green, linters clean.
+- 2026-08-31: **Done-when, mechanically**:
+  TestDoneWhen_MCPCallWithZeroSecretsInSandbox — a scripted agent calls
+  an upstream that rejects unauthenticated requests; the upstream
+  provably received the vault credential; grep across every event
+  payload and every file under the sandbox finds ZERO occurrences of
+  the secret; the session parks end_turn with the upstream data as the
+  tool result. The claim holds in its strongest form: the native path
+  holds zero secrets AND zero tokens in the sandbox.
