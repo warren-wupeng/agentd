@@ -738,10 +738,10 @@ async function refreshComposerSession(sessionId, applySessionMeta) {
 
 function needsExplicitRun(session, event) {
   const harness = session?.harness;
-  if (!harness || harness === "native") return false;
+  if (harness !== "native") return false;
+  if (!event) return false;
   const state = session?.state;
-  if (state === "terminated") return false;
-  return !!event;
+  return state === "idle";
 }
 
 function renderOptimisticUserMessage(text, optimisticId) {
