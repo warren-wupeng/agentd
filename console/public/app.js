@@ -327,6 +327,7 @@ function agentCreateModal(done) {
 /* ================= sessions ================= */
 
 let currentDetail = null; // { id, es, pollState, maxSeq }
+let optimisticSeq = 0;
 
 async function viewSessions(root, sessionId) {
   root.innerHTML = `
@@ -574,6 +575,11 @@ function renderEventBody(ev) {
     dropEphemeral();
     const blocks = p.content || [];
     const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    const existing = [...tr.querySelectorAll('.msg.user[data-optimistic="1"]')].find((el) => el.dataset.text === text);
+    if (existing) {
+      existing.dataset.optimistic = "0";
+      return;
+    }
     const m = document.createElement("div");
     m.className = "msg user";
     m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
@@ -661,6 +667,7 @@ function bindComposer(sessionId) {
     input.value = "";
     input.style.height = "auto";
     send.disabled = true;
+    renderOptimisticUserMessage(text);
     try {
       await api.req("POST", `/v1/sessions/${sessionId}/events`, {
         type: "message.user",
@@ -668,7 +675,10 @@ function bindComposer(sessionId) {
       });
       // wake the actor; 409 (already running) is fine
       await api.req("POST", `/v1/sessions/${sessionId}/run`).catch(() => {});
-    } catch (err) { apiErr(err); }
+    } catch (err) {
+      removeOptimisticUserMessage(text);
+      apiErr(err);
+    }
     input.focus();
   };
   send.addEventListener("click", doSend);
@@ -680,6 +690,26 @@ function bindComposer(sessionId) {
     input.style.height = Math.min(input.scrollHeight, 160) + "px";
   });
   setTimeout(() => input.focus(), 50);
+}
+
+function renderOptimisticUserMessage(text) {
+  const tr = $("#tr");
+  if (!tr || !currentDetail) return;
+  tr.querySelector(".empty")?.remove();
+  const m = document.createElement("div");
+  m.className = "msg user";
+  m.dataset.optimistic = "1";
+  m.dataset.text = text;
+  m.dataset.optimisticId = String(++optimisticSeq);
+  m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
+  tr.appendChild(m);
+  scrollBottom();
+}
+
+function removeOptimisticUserMessage(text) {
+  const tr = $("#tr");
+  const optimistic = [...(tr?.querySelectorAll('.msg.user[data-optimistic="1"]') || [])].find((el) => el.dataset.text === text);
+  optimistic?.remove();
 }
 
 /* ================= workflows ================= */
@@ -802,6 +832,7 @@ async function viewWorkflows(root) {
       let run;
       try { ({ run } = await api.req("GET", `/v1/workflows/${runId}`)); } catch { return; }
       rememberWorkflowRun(run);
+      wfRunsState = mergeWorkflowRunState(wfRunsState, run);
       if (wfSelected !== runId) return;
       renderDag(run);
       renderRunList(wfRunsState);
@@ -882,6 +913,14 @@ async function viewWorkflows(root) {
         if (el.dataset.sid) location.hash = "#/sessions/" + el.dataset.sid;
       });
     });
+  }
+
+  function mergeWorkflowRunState(runs, run) {
+    const merged = { ...run, ts: run.created_at || run.ts || runs.find((r) => r.id === run.id)?.ts };
+    const next = runs.filter((r) => r.id !== run.id);
+    next.unshift(merged);
+    next.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
+    return next;
   }
 
   function runChip(st) {
