@@ -22,7 +22,11 @@ jobs:
           path: ~/.embedded-postgres-go
           key: embedded-pg-v16-${{ runner.os }}
       # Tests boot their own embedded Postgres — no service container.
+      # AGENTD_DOCKER=1 enables the sandbox escape suite's docker tier
+      # (ubuntu runners ship a working daemon).
       - run: go test ./...
+        env:
+          AGENTD_DOCKER: "1"
 
   lint:
     runs-on: ubuntu-latest

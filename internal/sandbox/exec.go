@@ -20,6 +20,7 @@ import (
 // what the docker provider and ADR-001's e2b provider are for.
 type Exec struct {
 	base string
+	pol  Policy
 
 	mu      sync.Mutex
 	handles map[uuid.UUID]*execHandle
@@ -30,7 +31,7 @@ func NewExec(base string) (*Exec, error) {
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return nil, fmt.Errorf("create sandbox base %s: %w", base, err)
 	}
-	return &Exec{base: base, handles: map[uuid.UUID]*execHandle{}}, nil
+	return &Exec{base: base, pol: DefaultPolicy(), handles: map[uuid.UUID]*execHandle{}}, nil
 }
 
 func (e *Exec) Handle(sessionID uuid.UUID) (Handle, error) {
@@ -53,8 +54,16 @@ type execHandle struct {
 	workdir   string
 }
 
+func (e *Exec) SetPolicy(p Policy) { e.pol = p }
+func (e *Exec) Policy() Policy     { return e.pol }
+
 func (h *execHandle) SessionID() uuid.UUID { return h.sessionID }
-func (h *execHandle) Workdir() string      { return h.workdir }
+
+// CanEnforceEgress is FALSE and always will be: no root, no namespaces.
+// The escape suite asserts the consequences as expected behavior —
+// the dev tier's honesty is part of the contract.
+func (h *execHandle) CanEnforceEgress() bool { return false }
+func (h *execHandle) Workdir() string        { return h.workdir }
 
 func (h *execHandle) ResolvePath(modelPath string) (string, error) {
 	return resolveUnder(h.workdir, modelPath)
@@ -119,4 +128,26 @@ func resolveUnder(root, p string) (string, error) {
 		return "", fmt.Errorf("path %q escapes the workspace", p)
 	}
 	return filepath.Join(root, clean), nil
+}
+
+// ReadFile/WriteFile: host-side fs on the anchored path (dev tier).
+func (h *execHandle) ReadFile(_ context.Context, path string) ([]byte, error) {
+	full, err := h.ResolvePath(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(full)
+}
+
+func (h *execHandle) WriteFile(_ context.Context, path string, content []byte) error {
+	full, err := h.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	if dir := filepath.Dir(full); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(full, content, 0o644)
 }

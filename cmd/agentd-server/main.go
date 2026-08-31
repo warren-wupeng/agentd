@@ -79,12 +79,18 @@ func serve(cfg *config.Config) error {
 		switch cfg.SandboxProv {
 		case "docker":
 			sb, err = sandbox.NewDocker(cfg.SandboxBase, "")
+		case "e2b":
+			var e2b *sandbox.E2B
+			e2b, err = sandbox.NewE2B("", cfg.E2BAPIKey, cfg.E2BTemplate)
+			sb = e2b
+			slog.Warn("e2b sandbox provider is experimental — wire contract not yet live-validated")
 		default:
 			sb, err = sandbox.NewExec(cfg.SandboxBase)
 		}
 		if err != nil {
 			return err
 		}
+		sb.SetPolicy(sandbox.Policy{Egress: sandbox.Egress(cfg.SandboxEgress)})
 		listener, err := store.NewEventListener(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return fmt.Errorf("event listener: %w", err)

@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/warren-wupeng/agentd/internal/policy"
@@ -16,6 +14,23 @@ import (
 // maxFileBytes caps what read_file returns and edit_file rewrites — a
 // binary or a generated bundle must not flood the context.
 const maxFileBytes = 256 << 10
+
+// isPathReject reports a sandbox path-policy rejection (traversal,
+// absolute path): model-visible data, not an infrastructure error.
+func isPathReject(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "escape") || strings.Contains(msg, "absolute paths") ||
+		strings.Contains(msg, "empty path")
+}
+
+// isNotExist maps both host os errors and remote "not exist" payloads.
+func isNotExist(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not exist") ||
+		err != nil && strings.Contains(err.Error(), "no such file")
+}
 
 // ReadFile returns a file's contents from the session workspace.
 type ReadFile struct{}
@@ -37,19 +52,18 @@ func (t *ReadFile) Schema() json.RawMessage {
 	}, "path")
 }
 
-func (t *ReadFile) Execute(_ context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
+func (t *ReadFile) Execute(ctx context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
 	var in struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	full, err := h.ResolvePath(in.Path)
-	if err != nil {
+	data, err := h.ReadFile(ctx, in.Path)
+	if isPathReject(err) {
 		return "error: " + err.Error(), nil
 	}
-	data, err := os.ReadFile(full)
-	if os.IsNotExist(err) {
+	if isNotExist(err) {
 		return fmt.Sprintf("error: file not found: %s (list the workspace with bash: ls -R)", in.Path), nil
 	}
 	if err != nil {
@@ -83,7 +97,7 @@ func (t *WriteFile) Schema() json.RawMessage {
 	}, "path", "content")
 }
 
-func (t *WriteFile) Execute(_ context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
+func (t *WriteFile) Execute(ctx context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
 	var in struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -91,16 +105,10 @@ func (t *WriteFile) Execute(_ context.Context, h sandbox.Handle, input json.RawM
 	if err := json.Unmarshal(input, &in); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	full, err := h.ResolvePath(in.Path)
-	if err != nil {
-		return "error: " + err.Error(), nil
-	}
-	if dir := filepath.Dir(full); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
+	if err := h.WriteFile(ctx, in.Path, []byte(in.Content)); err != nil {
+		if isPathReject(err) {
+			return "error: " + err.Error(), nil
 		}
-	}
-	if err := os.WriteFile(full, []byte(in.Content), 0o644); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("wrote %d bytes to %s", len(in.Content), in.Path), nil
@@ -131,7 +139,7 @@ func (t *EditFile) Schema() json.RawMessage {
 	}, "path", "old_string", "new_string")
 }
 
-func (t *EditFile) Execute(_ context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
+func (t *EditFile) Execute(ctx context.Context, h sandbox.Handle, input json.RawMessage) (string, error) {
 	var in struct {
 		Path       string `json:"path"`
 		OldString  string `json:"old_string"`
@@ -141,12 +149,11 @@ func (t *EditFile) Execute(_ context.Context, h sandbox.Handle, input json.RawMe
 	if err := json.Unmarshal(input, &in); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	full, err := h.ResolvePath(in.Path)
-	if err != nil {
+	data, err := h.ReadFile(ctx, in.Path)
+	if isPathReject(err) {
 		return "error: " + err.Error(), nil
 	}
-	data, err := os.ReadFile(full)
-	if os.IsNotExist(err) {
+	if isNotExist(err) {
 		return fmt.Sprintf("error: file not found: %s — create it with write_file first", in.Path), nil
 	}
 	if err != nil {
@@ -171,7 +178,7 @@ func (t *EditFile) Execute(_ context.Context, h sandbox.Handle, input json.RawMe
 		updated = strings.Replace(string(data), in.OldString, in.NewString, -1)
 		count = n
 	}
-	if err := os.WriteFile(full, []byte(updated), 0o644); err != nil {
+	if err := h.WriteFile(ctx, in.Path, []byte(updated)); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("replaced %d occurrence(s) in %s", count, in.Path), nil

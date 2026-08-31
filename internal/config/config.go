@@ -22,13 +22,16 @@ type Config struct {
 
 	// Native loop (M2). ModelBaseURL empty = CRUD-only process; sessions
 	// that try to run park with retries_exhausted and a remediation.
-	ModelBaseURL string
-	ModelAPIKey  string
-	SandboxProv  string // "exec" | "docker"
-	SandboxBase  string
-	LoopMaxSteps int
-	LoopRetries  int
-	OpenCodeURL  string
+	ModelBaseURL  string
+	ModelAPIKey   string
+	SandboxProv   string // "exec" | "docker" | "e2b"
+	SandboxBase   string
+	SandboxEgress string // "none" | "allow" — ADR-001's floor
+	E2BAPIKey     string
+	E2BTemplate   string
+	LoopMaxSteps  int
+	LoopRetries   int
+	OpenCodeURL   string
 }
 
 // Load reads and validates the environment.
@@ -64,10 +67,19 @@ func Load() (*Config, error) {
 	if sandboxProv == "" {
 		sandboxProv = "exec"
 	}
-	if sandboxProv != "exec" && sandboxProv != "docker" {
+	if sandboxProv != "exec" && sandboxProv != "docker" && sandboxProv != "e2b" {
 		return nil, agentderr.InvalidInput(
-			"SANDBOX_PROVIDER must be \"exec\" or \"docker\", got "+sandboxProv,
-			"exec = dev fallback with zero isolation; docker = ADR-001 dev isolation")
+			"SANDBOX_PROVIDER must be \"exec\", \"docker\", or \"e2b\", got "+sandboxProv,
+			"exec = dev fallback (zero isolation); docker = dev isolation; e2b = production microVMs (ADR-001)")
+	}
+	egress := "none"
+	if raw := os.Getenv("SANDBOX_EGRESS"); raw != "" {
+		if raw != "none" && raw != "allow" {
+			return nil, agentderr.InvalidInput(
+				"SANDBOX_EGRESS must be \"none\" or \"allow\", got "+raw,
+				"none is the default floor; allow opts a session's sandbox into outbound network")
+		}
+		egress = raw
 	}
 	sandboxBase := os.Getenv("SANDBOX_BASE")
 	if sandboxBase == "" {
@@ -96,15 +108,18 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:  dbURL,
-		OpenCodeURL:  os.Getenv("OPENCODE_URL"),
-		HTTPAddr:     addr,
-		LogLevel:     level,
-		ModelBaseURL: os.Getenv("MODEL_BASE_URL"),
-		ModelAPIKey:  os.Getenv("MODEL_API_KEY"),
-		SandboxProv:  sandboxProv,
-		SandboxBase:  sandboxBase,
-		LoopMaxSteps: maxSteps,
-		LoopRetries:  retries,
+		DatabaseURL:   dbURL,
+		OpenCodeURL:   os.Getenv("OPENCODE_URL"),
+		SandboxEgress: egress,
+		E2BAPIKey:     os.Getenv("E2B_API_KEY"),
+		E2BTemplate:   os.Getenv("E2B_TEMPLATE"),
+		HTTPAddr:      addr,
+		LogLevel:      level,
+		ModelBaseURL:  os.Getenv("MODEL_BASE_URL"),
+		ModelAPIKey:   os.Getenv("MODEL_API_KEY"),
+		SandboxProv:   sandboxProv,
+		SandboxBase:   sandboxBase,
+		LoopMaxSteps:  maxSteps,
+		LoopRetries:   retries,
 	}, nil
 }
