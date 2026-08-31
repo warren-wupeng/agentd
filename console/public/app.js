@@ -769,9 +769,9 @@ async function viewWorkflows(root) {
   const initialRuns = await renderRunList();
   if (initialRuns[0]) selectRun(initialRuns[0].id);
 
-  async function renderRunList(runs = null) {
+  async function renderRunList(runs = undefined) {
     const box = $("#wf-runs");
-    if (runs) {
+    if (runs !== undefined) {
       wfRunsState = runs;
       wfRunsError = "";
     } else {
@@ -780,7 +780,6 @@ async function viewWorkflows(root) {
         wfRunsState = await wfRuns();
       } catch {
         wfRunsError = "无法加载服务器上的运行历史";
-        wfRunsState = [];
       }
     }
     box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError}</div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
@@ -798,14 +797,14 @@ async function viewWorkflows(root) {
   async function selectRun(runId) {
     clearInterval(wfPoll);
     wfSelected = runId;
-    renderRunList();
+    renderRunList(wfRunsState);
     const draw = async () => {
       let run;
       try { ({ run } = await api.req("GET", `/v1/workflows/${runId}`)); } catch { return; }
       rememberWorkflowRun(run);
       if (wfSelected !== runId) return;
       renderDag(run);
-      renderRunList();
+      renderRunList(wfRunsState);
       if (run.status !== "running") clearInterval(wfPoll);
     };
     await draw();
