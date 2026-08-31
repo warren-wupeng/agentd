@@ -75,7 +75,7 @@ The core loop gets you a working agent. Running agents *inside a company* takes 
 
 ## Roadmap
 
-All eight milestones are **shipped** (M1–M8, 2026-08-30 → 2026-08-31); every done-when was met mechanically — most against a live model, with the OpenCode/E2B adapters honestly marked `experimental` pending live-instance validation. Run the console: `cd console && AGENTD_URL=http://localhost:8080 node server.js`.
+All eight milestones are **shipped** (M1–M8, 2026-08-30 → 2026-08-31); every done-when was met mechanically — most against a live model, with the OpenCode/E2B adapters honestly marked `experimental` pending live-instance validation. Run the zero-dependency console: `cd console && AGENTD_URL=http://localhost:8080 node server.js`.
 
 | Milestone | Scope | Done when | Status |
 |---|---|---|---|
@@ -92,7 +92,7 @@ Explicitly later: general-purpose workflow features, more adapters (deepseek-har
 
 ## Planned layout
 
-Control plane in **Go**; console in Node.js + React; SDKs in TypeScript and Python. Agents working in this repo start at [`AGENTS.md`](./AGENTS.md).
+Control plane in **Go**; console in zero-dependency Node.js + vanilla JS/CSS; SDKs in TypeScript and Python. Agents working in this repo start at [`AGENTS.md`](./AGENTS.md).
 
 ```
 cmd/agentd-server/     # control-plane API
@@ -105,7 +105,7 @@ internal/policy/       # guardrail engine (tool / content / network)
 internal/eval/         # datasets, scorers, version regression gate
 internal/telemetry/    # OTel tracing
 sdk/ts/  sdk/python/   # client SDKs (stream-first by default)
-console/               # web console (Node.js BFF + React)
+console/               # web console (Node.js server + vanilla JS/CSS)
 deploy/compose/  deploy/helm/
 docs/                  # system of record: adr/, design/, research/, exec-plans/, GOLDEN.md
 ```
