@@ -330,6 +330,7 @@ let currentDetail = null; // { id, es, pollState, maxSeq }
 let optimisticSeq = 0;
 let optimisticMessageSeq = 0;
 const optimisticMessages = new Map();
+let healthPollTimer = null;
 
 async function viewSessions(root, sessionId) {
   root.innerHTML = `
@@ -521,9 +522,14 @@ async function renderHead(s) {
     ${s.stop_reason ? `<span class="chip ${s.stop_reason === "end_turn" ? "green" : "amber"}">${esc(stopLabel(s.stop_reason))}</span>` : ""}
     <span class="spacer"></span>
     <span class="faint" style="font-size:11.5px">agent v${s.agent_version}</span>`;
-  $(".sid", head).addEventListener("click", () => {
-    navigator.clipboard?.writeText(s.id);
-    toast("会话 ID 已复制", "ok");
+  $(".sid", head).addEventListener("click", async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable");
+      await navigator.clipboard.writeText(s.id);
+      toast("会话 ID 已复制", "ok");
+    } catch {
+      toast("复制失败，请手动复制会话 ID", "err");
+    }
   });
 }
 
@@ -998,7 +1004,8 @@ async function healthPoll() {
     }
   };
   await tick();
-  setInterval(tick, 10000);
+  if (healthPollTimer) clearInterval(healthPollTimer);
+  healthPollTimer = setInterval(tick, 10000);
 }
 
 healthPoll();
