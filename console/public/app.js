@@ -401,7 +401,7 @@ function sessionCreateModal(presetAgent) {
 
 async function selectSession(sessionId) {
   teardownDetail();
-  currentDetail = { id: sessionId, es: null, poll: null, maxSeq: 0, toolCards: new Map(), ephemeral: null };
+  currentDetail = { id: sessionId, es: null, poll: null, maxSeq: 0, replaySeq: 0, toolCards: new Map(), ephemeral: null };
 
   const detail = $("#ss-detail");
   detail.innerHTML = `
@@ -420,12 +420,12 @@ async function selectSession(sessionId) {
   bindComposer(sessionId);
 
   // history replay (the durable part), then live tail
-  const events = await fetchSessionEvents(sessionId);
+  const replayMaxSeq = await fetchSessionEvents(sessionId);
   if (currentDetail?.id !== sessionId) return;
-  if (!events.length) {
+  if (!currentDetail.replaySeq) {
     tr.innerHTML = `<div class="empty"><div class="t">会话还是空的 — 发第一条消息开始</div></div>`;
   }
-  for (const ev of events) renderEvent(ev);
+  currentDetail.maxSeq = Math.max(currentDetail.maxSeq, currentDetail.replaySeq, replayMaxSeq);
   tr.scrollTop = tr.scrollHeight;
 
   const es = new EventSource(`/api/v1/sessions/${sessionId}/stream?after_seq=${currentDetail.maxSeq}`);
@@ -447,17 +447,20 @@ async function selectSession(sessionId) {
 }
 
 async function fetchSessionEvents(sessionId, limit = 300) {
-  const events = [];
   let afterSeq = 0;
   while (true) {
     const params = new URLSearchParams({ limit: String(limit) });
     if (afterSeq > 0) params.set("after_seq", String(afterSeq));
     const { events: page = [], next_after_seq: nextAfterSeq = null } = await api.req("GET", `/v1/sessions/${sessionId}/events?${params.toString()}`);
-    events.push(...page);
-    if (!page.length || nextAfterSeq == null || nextAfterSeq <= afterSeq) break;
+    if (!page.length) return afterSeq;
+    for (const ev of page) {
+      if (currentDetail?.id !== sessionId) return afterSeq;
+      renderEvent(ev, { replay: true });
+      afterSeq = Math.max(afterSeq, ev.seq || 0);
+    }
+    if (nextAfterSeq == null || nextAfterSeq <= afterSeq) return afterSeq;
     afterSeq = nextAfterSeq;
   }
-  return events;
 }
 
 function teardownDetail() {
@@ -482,7 +485,7 @@ async function pollSessionMeta(sessionId) {
     renderHead(s);
     const busy = s.state === "running" || s.state === "rescheduling";
     $("#cp-send").disabled = busy;
-    $("#cp-input").disabled = busy && s.state === "running";
+    $("#cp-input").disabled = busy;
     $("#cp-input").placeholder = busy ? "agent 正在运行…" : "给 agent 发送消息…";
   };
   await update();
@@ -531,9 +534,20 @@ function toolCardEl(tc) {
   return d;
 }
 
-function renderEvent(ev) {
-  if (!currentDetail || ev.seq <= currentDetail.maxSeq) return;
-  currentDetail.maxSeq = ev.seq;
+function renderEvent(ev, options = {}) {
+  if (!currentDetail) return;
+  const seq = ev.seq || 0;
+  if (options.replay) {
+    if (seq <= currentDetail.replaySeq) return;
+    currentDetail.replaySeq = seq;
+    return renderEventBody(ev);
+  }
+  if (seq <= currentDetail.maxSeq || seq <= currentDetail.replaySeq) return;
+  currentDetail.maxSeq = seq;
+  return renderEventBody(ev);
+}
+
+function renderEventBody(ev) {
   const tr = $("#tr");
   if (!tr) return;
   tr.querySelector(".empty")?.remove();
