@@ -32,6 +32,9 @@ type Config struct {
 	LoopMaxSteps  int
 	LoopRetries   int
 	OpenCodeURL   string
+	// VaultMasterKey is raw (hex or base64), decoded at wiring; empty =
+	// credential plane (vault + MCP proxy) disabled.
+	VaultMasterKey string
 }
 
 // Load reads and validates the environment.
@@ -108,18 +111,19 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:   dbURL,
-		OpenCodeURL:   os.Getenv("OPENCODE_URL"),
-		SandboxEgress: egress,
-		E2BAPIKey:     os.Getenv("E2B_API_KEY"),
-		E2BTemplate:   os.Getenv("E2B_TEMPLATE"),
-		HTTPAddr:      addr,
-		LogLevel:      level,
-		ModelBaseURL:  os.Getenv("MODEL_BASE_URL"),
-		ModelAPIKey:   os.Getenv("MODEL_API_KEY"),
-		SandboxProv:   sandboxProv,
-		SandboxBase:   sandboxBase,
-		LoopMaxSteps:  maxSteps,
-		LoopRetries:   retries,
+		DatabaseURL:    dbURL,
+		OpenCodeURL:    os.Getenv("OPENCODE_URL"),
+		SandboxEgress:  egress,
+		E2BAPIKey:      os.Getenv("E2B_API_KEY"),
+		E2BTemplate:    os.Getenv("E2B_TEMPLATE"),
+		VaultMasterKey: os.Getenv("VAULT_MASTER_KEY"),
+		HTTPAddr:       addr,
+		LogLevel:       level,
+		ModelBaseURL:   os.Getenv("MODEL_BASE_URL"),
+		ModelAPIKey:    os.Getenv("MODEL_API_KEY"),
+		SandboxProv:    sandboxProv,
+		SandboxBase:    sandboxBase,
+		LoopMaxSteps:   maxSteps,
+		LoopRetries:    retries,
 	}, nil
 }

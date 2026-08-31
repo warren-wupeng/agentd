@@ -27,6 +27,9 @@ jobs:
       - run: go test ./...
         env:
           AGENTD_DOCKER: "1"
+      # SDKs are dependency-free; syntax checks are the whole CI story.
+      - run: node --check sdk/typescript/agentd.js
+      - run: python -m py_compile sdk/python/agentd.py
 
   lint:
     runs-on: ubuntu-latest

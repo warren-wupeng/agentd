@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/agentderr"
 	"github.com/warren-wupeng/agentd/internal/hub"
+	"github.com/warren-wupeng/agentd/internal/mcp"
 	"github.com/warren-wupeng/agentd/internal/store"
+	"github.com/warren-wupeng/agentd/internal/vault"
 )
 
 // Runner is what the API needs from the loop: schedule the actor for a
@@ -49,6 +51,12 @@ func WithHarnesses(names []string) Option {
 	}
 }
 
+// WithVaultMCP enables the credential plane (M6): vault CRUD (values
+// write-only), the MCP server registry, and the session proxy.
+func WithVaultMCP(v *vault.Vault, m *mcp.MCP) Option {
+	return func(h *handler) { h.vault = v; h.mcp = m }
+}
+
 // NewHandler builds the full route table (Go 1.22 method+pattern mux).
 func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	h := &handler{st: st}
@@ -77,6 +85,13 @@ func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	mux.HandleFunc("POST /v1/sessions/{id}/run", h.runSession)
 	mux.HandleFunc("GET /v1/sessions/{id}/stream", h.streamSession)
 
+	mux.HandleFunc("PUT /v1/vault/secrets", h.putSecret)
+	mux.HandleFunc("GET /v1/vault/secrets", h.listSecrets)
+	mux.HandleFunc("DELETE /v1/vault/secrets/{name}", h.deleteSecret)
+	mux.HandleFunc("POST /v1/mcp/servers", h.registerMCPServer)
+	mux.HandleFunc("GET /v1/mcp/servers", h.listMCPServers)
+	mux.HandleFunc("POST /v1/sessions/{id}/mcp/{server}", h.mcpProxy)
+
 	return requestLogger(mux)
 }
 
@@ -86,6 +101,8 @@ type handler struct {
 	hub       *hub.Hub             // nil: no streaming wired
 	listener  *store.EventListener // nil: no streaming wired
 	harnesses map[string]bool      // nil: native only
+	vault     *vault.Vault         // nil: credential plane disabled
+	mcp       *mcp.MCP             // nil: credential plane disabled
 }
 
 func (h *handler) healthz(w http.ResponseWriter, r *http.Request) {

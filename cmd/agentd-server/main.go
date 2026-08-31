@@ -23,11 +23,13 @@ import (
 	"github.com/warren-wupeng/agentd/internal/harness"
 	"github.com/warren-wupeng/agentd/internal/hub"
 	"github.com/warren-wupeng/agentd/internal/loop"
+	"github.com/warren-wupeng/agentd/internal/mcp"
 	"github.com/warren-wupeng/agentd/internal/model"
 	"github.com/warren-wupeng/agentd/internal/policy"
 	"github.com/warren-wupeng/agentd/internal/sandbox"
 	"github.com/warren-wupeng/agentd/internal/store"
 	"github.com/warren-wupeng/agentd/internal/tools"
+	"github.com/warren-wupeng/agentd/internal/vault"
 )
 
 func main() {
@@ -96,13 +98,38 @@ func serve(cfg *config.Config) error {
 			return fmt.Errorf("event listener: %w", err)
 		}
 		defer func() { _ = listener.Close() }()
+
+		// The credential plane (M6): optional until VAULT_MASTER_KEY is
+		// set — the API degrades to no vault endpoints, nothing half-works.
+		registryOpts := []tools.RegistryOption{}
+		if cfg.VaultMasterKey != "" {
+			mkey, err := vault.NewMasterKey(cfg.VaultMasterKey)
+			if err != nil {
+				return err
+			}
+			vlt, err := vault.New(ctx, cfg.DatabaseURL, mkey)
+			if err != nil {
+				return fmt.Errorf("vault: %w", err)
+			}
+			defer vlt.Close()
+			mcpSvc, err := mcp.New(ctx, cfg.DatabaseURL, vlt)
+			if err != nil {
+				return fmt.Errorf("mcp: %w", err)
+			}
+			defer mcpSvc.Close()
+			opts = append(opts, api.WithVaultMCP(vlt, mcpSvc))
+			registryOpts = append(registryOpts, tools.WithMCP(mcpSvc))
+			slog.Info("credential plane enabled", "vault", "aes-256-gcm", "mcp_proxy", "on")
+		} else {
+			slog.Warn("VAULT_MASTER_KEY not set — vault + MCP credential proxy disabled")
+		}
 		deltas := hub.New()
 		deps := &loop.Deps{
 			Store:        st,
 			Model:        model.NewOpenAI(cfg.ModelBaseURL, cfg.ModelAPIKey),
 			Sandbox:      sb,
 			Policy:       policy.NewStatic(),
-			Registry:     tools.NewRegistry(),
+			Registry:     tools.NewRegistry(registryOpts...),
 			MaxSteps:     cfg.LoopMaxSteps,
 			ModelRetries: cfg.LoopRetries,
 			Log:          slog.Default(),

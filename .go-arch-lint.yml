@@ -17,6 +17,8 @@ components:
   policy:     { in: internal/policy/** }
   hub:        { in: internal/hub/** }
   harness:    { in: internal/harness/** }
+  vault:      { in: internal/vault/** }
+  mcp:        { in: internal/mcp/** }
   store:      { in: internal/store/** }
   config:     { in: internal/config/** }
   agentderr:  { in: internal/agentderr/** }
@@ -29,12 +31,14 @@ commonComponents:
 
 # Components absent from deps may import nothing but commonComponents.
 deps:
-  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub, harness] }
-  api:      { mayDependOn: [store, loop, hub, harness] } # wiring-level seams: loop Runner, harness Dispatcher (deepScan sees the cmd wiring)
+  cmd:      { mayDependOn: [api, store, config, loop, model, tools, sandbox, policy, hub, harness, vault, mcp] }
+  api:      { mayDependOn: [store, loop, hub, harness, vault, mcp] } # wiring-level seams: loop Runner, harness Dispatcher (deepScan sees the cmd wiring)
   loop:     { mayDependOn: [store, model, tools, sandbox, policy] }
   hub:      { mayDependOn: [model] } # Delta type only — fan-out carries model fragments
   harness:  { mayDependOn: [store, model, policy, loop] } # native wraps loop; adapters normalize into store events
-  tools:    { mayDependOn: [sandbox, policy] }
+  vault:    { anyVendorDeps: true } # G2: secrets live ONLY here — zero project deps, minimal surface
+  mcp:      { mayDependOn: [vault, agentderr] } # injects vault credentials into outbound requests
+  tools:    { mayDependOn: [sandbox, policy, mcp] } # mcp: wiring-level — WithMCP(mcpSvc) in cmd; imports stay one-way via MCPCaller interface
   store:    { mayDependOn: [migrations] }
   testutil: { mayDependOn: [store] }
 

@@ -398,3 +398,31 @@ func TestMessageAppendAutoKicksNativeSession(t *testing.T) {
 		t.Fatalf("kicks after termination = %d, want 1", n)
 	}
 }
+
+// doWithHeader performs a JSON request with one extra header.
+func (s *server) doWithHeader(method, path string, body any, header, value string) (int, map[string]any) {
+	s.t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	req, err := http.NewRequest(method, s.ts.URL+path, bytes.NewReader(raw))
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(header, value)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	rawResp, _ := io.ReadAll(resp.Body)
+	var out map[string]any
+	if len(rawResp) > 0 {
+		if err := json.Unmarshal(rawResp, &out); err != nil {
+			s.t.Fatalf("non-JSON response to %s %s: %s", method, path, rawResp)
+		}
+	}
+	return resp.StatusCode, out
+}

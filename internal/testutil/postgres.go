@@ -189,7 +189,7 @@ func truncate(t *testing.T, url string) {
 	}
 	defer pool.Close()
 	if _, err := pool.Exec(context.Background(),
-		`TRUNCATE events, sessions, agent_versions, agents RESTART IDENTITY CASCADE`); err != nil {
+		`TRUNCATE events, sessions, agent_versions, agents, vault_secrets, mcp_servers RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 }

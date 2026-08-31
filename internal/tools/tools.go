@@ -33,12 +33,28 @@ type Registry struct {
 	order  []string
 }
 
-// NewRegistry returns all built-in tools.
-func NewRegistry() *Registry {
+// RegistryOption extends a registry at construction.
+type RegistryOption func(*Registry)
+
+// WithMCP adds the control-plane MCP proxy tool (M6): model-visible,
+// credential-free from the sandbox's perspective.
+func WithMCP(c MCPCaller) RegistryOption {
+	return func(r *Registry) {
+		t := NewMCP(c)
+		r.byName[t.Name()] = t
+		r.order = append(r.order, t.Name())
+	}
+}
+
+// NewRegistry returns the built-in tools plus any options.
+func NewRegistry(opts ...RegistryOption) *Registry {
 	r := &Registry{byName: map[string]Tool{}}
 	for _, t := range []Tool{NewBash(), NewReadFile(), NewWriteFile(), NewEditFile()} {
 		r.byName[t.Name()] = t
 		r.order = append(r.order, t.Name())
+	}
+	for _, o := range opts {
+		o(r)
 	}
 	return r
 }
