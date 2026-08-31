@@ -50,6 +50,7 @@ type Run struct {
 	ID         string      `json:"id"`
 	Name       string      `json:"name"`
 	Status     string      `json:"status"`
+	CreatedAt  string      `json:"created_at,omitempty"`
 	Definition *Definition `json:"definition"`
 	NodeStates []NodeState `json:"node_states"`
 }

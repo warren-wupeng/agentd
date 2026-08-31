@@ -665,15 +665,17 @@ function wfRunCache() {
   try { return JSON.parse(localStorage.getItem("agentd.wf.runs") || "[]"); } catch { return []; }
 }
 function rememberWorkflowRun(run) {
+  const ts = run.created_at || run.ts;
+  if (!ts) return;
   const cache = wfRunCache().filter((r) => r.id !== run.id);
-  cache.unshift({ id: run.id, name: run.name, ts: run.created_at || run.ts || new Date().toISOString(), status: run.status });
+  cache.unshift({ id: run.id, name: run.name, ts, status: run.status });
   localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
 }
 async function wfRuns(limit = 20) {
   try {
     const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
     runs.forEach(rememberWorkflowRun);
-    return runs.map((run) => ({ ...run, ts: run.created_at || run.ts }));
+    return runs.map((run) => ({ ...run, ts: run.created_at || run.ts })).filter((run) => run.ts);
   } catch {
     return wfRunCache();
   }

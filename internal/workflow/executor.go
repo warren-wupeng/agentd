@@ -119,7 +119,7 @@ func (e *Executor) List(ctx context.Context, limit int, id *uuid.UUID) ([]*Run, 
 	}
 	args = append(args, limit)
 	rows, err := e.pool.Query(ctx,
-		`SELECT id, name, status, definition, node_states FROM workflow_runs`+where+
+		`SELECT id, name, status, created_at, definition, node_states FROM workflow_runs`+where+
 		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return nil, agentderr.Internal(err)
@@ -130,11 +130,13 @@ func (e *Executor) List(ctx context.Context, limit int, id *uuid.UUID) ([]*Run, 
 	for rows.Next() {
 		var run Run
 		var runID uuid.UUID
+		var createdAt time.Time
 		var defRaw, statesRaw []byte
-		if err := rows.Scan(&runID, &run.Name, &run.Status, &defRaw, &statesRaw); err != nil {
+		if err := rows.Scan(&runID, &run.Name, &run.Status, &createdAt, &defRaw, &statesRaw); err != nil {
 			return nil, agentderr.Internal(err)
 		}
 		run.ID = runID.String()
+		run.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		_ = json.Unmarshal(defRaw, &run.Definition)
 		_ = json.Unmarshal(statesRaw, &run.NodeStates)
 		out = append(out, &run)
