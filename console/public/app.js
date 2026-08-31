@@ -773,23 +773,8 @@ const WF_TEMPLATE = {
   ],
 };
 
-function wfRunCache() {
-  try { return JSON.parse(localStorage.getItem("agentd.wf.runs") || "[]"); } catch { return []; }
-}
-function rememberWorkflowRun(run) {
-  const cache = wfRunCache();
-  const existing = cache.find((r) => r.id === run.id);
-  const ts = run.created_at || run.ts || existing?.ts;
-  if (!ts) return;
-  const next = cache.filter((r) => r.id !== run.id);
-  next.unshift({ id: run.id, name: run.name || existing?.name || "workflow", ts, status: run.status || existing?.status });
-  try {
-    localStorage.setItem("agentd.wf.runs", JSON.stringify(next.slice(0, 20)));
-  } catch {}
-}
 async function wfRuns(limit = 20) {
   const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
-  runs.forEach(rememberWorkflowRun);
   return runs.map((run) => ({ ...run, ts: run.created_at || run.ts })).filter((run) => run.ts);
 }
 function wfRunStatuses(runs) { return runs.map((r) => r.status || "?"); }
@@ -834,8 +819,8 @@ async function viewWorkflows(root) {
         n.prompt = n.prompt.replace("{{spec}}", spec);
       }
       const { run } = await api.req("POST", "/v1/workflows", def);
-      rememberWorkflowRun(run);
       toast("流水线已启动 " + short(run.id), "ok");
+      await renderRunList();
       selectRun(run.id);
     } catch (err) { apiErr(err); }
     btn.disabled = false;
@@ -861,7 +846,8 @@ async function viewWorkflows(root) {
         wfRunsError = "无法加载服务器上的运行历史";
       }
     }
-    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError}</div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
+    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError} <button class="btn ghost" id="wf-runs-retry" style="margin-left:8px">重试</button></div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
+    $("#wf-runs-retry")?.addEventListener("click", () => renderRunList());
     for (const r of wfRunsState) {
       const el = document.createElement("div");
       el.className = "runitem" + (r.id === wfSelected ? " sel" : "");
@@ -880,7 +866,6 @@ async function viewWorkflows(root) {
     const draw = async () => {
       let run;
       try { ({ run } = await api.req("GET", `/v1/workflows/${runId}`)); } catch { return; }
-      rememberWorkflowRun(run);
       wfRunsState = mergeWorkflowRunState(wfRunsState, run);
       if (wfSelected !== runId) return;
       renderDag(run);
