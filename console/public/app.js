@@ -763,30 +763,35 @@ async function viewWorkflows(root) {
   });
 
   let wfSelected = null, wfPoll = null;
-
   let wfRunsError = "";
+  let wfRunsState = [];
 
-  await renderRunList();
-  const initialRuns = await wfRuns().catch(() => []);
+  const initialRuns = await renderRunList();
   if (initialRuns[0]) selectRun(initialRuns[0].id);
 
-  async function renderRunList() {
+  async function renderRunList(runs = null) {
     const box = $("#wf-runs");
-    let runs = [];
-    try {
+    if (runs) {
+      wfRunsState = runs;
       wfRunsError = "";
-      runs = await wfRuns();
-    } catch {
-      wfRunsError = "无法加载服务器上的运行历史";
+    } else {
+      try {
+        wfRunsError = "";
+        wfRunsState = await wfRuns();
+      } catch {
+        wfRunsError = "无法加载服务器上的运行历史";
+        wfRunsState = [];
+      }
     }
-    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--bad)'>${wfRunsError}</div>` : ""}${!wfRunsError && !runs.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
-    for (const r of runs) {
+    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError}</div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
+    for (const r of wfRunsState) {
       const el = document.createElement("div");
       el.className = "runitem" + (r.id === wfSelected ? " sel" : "");
       el.innerHTML = `<div class="rid">${short(r.id)} <span class="muted">${esc(r.name)}</span></div><div class="rmeta">${timeAgo(r.ts)}</div>`;
       el.addEventListener("click", () => selectRun(r.id));
       box.appendChild(el);
     }
+    return wfRunsState;
   }
 
   onTeardown(() => clearInterval(wfPoll));
