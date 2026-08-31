@@ -476,12 +476,15 @@ async function pollSessionMeta(sessionId) {
 async function renderHead(s) {
   const head = $("#tr-head");
   if (!head) return;
-  // resolved once per session; the poll ticks every 1.5s and shouldn't refetch
-  currentDetail.headInfo ||= api.req("GET", `/v1/agents/${s.agent_id}`)
-    .then(({ agent }) =>
-      api.req("GET", `/v1/agents/${s.agent_id}/versions/${s.agent_version}`)
-        .then(({ version }) => ({ name: agent.name, model: version.config?.model || "" })))
-    .catch(() => ({ name: "未知 agent", model: "" }));
+  const headKey = `${s.agent_id}:${s.agent_version}`;
+  if (currentDetail.headInfoKey !== headKey) {
+    currentDetail.headInfoKey = headKey;
+    currentDetail.headInfo = api.req("GET", `/v1/agents/${s.agent_id}`)
+      .then(({ agent }) =>
+        api.req("GET", `/v1/agents/${s.agent_id}/versions/${s.agent_version}`)
+          .then(({ version }) => ({ name: agent.name, model: version.config?.model || "" })))
+      .catch(() => ({ name: "未知 agent", model: "" }));
+  }
   const { name: agentName, model } = await currentDetail.headInfo;
   if (currentDetail?.id !== s.id) return;
   head.innerHTML = `
@@ -613,7 +616,7 @@ function appendEphemeral(text) {
     currentDetail.ephemeral.el = m;
   }
   currentDetail.ephemeral.buf += text;
-  $(".buf", currentDetail.ephemeral.el).textContent = currentDetail.ephemeral.buf.slice(-600);
+  $(".buf", currentDetail.ephemeral.el).textContent = currentDetail.ephemeral.buf;
 }
 function dropEphemeral() {
   if (currentDetail?.ephemeral) { currentDetail.ephemeral.el.remove(); currentDetail.ephemeral = null; }
