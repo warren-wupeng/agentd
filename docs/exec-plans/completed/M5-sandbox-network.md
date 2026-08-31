@@ -65,3 +65,18 @@ testing itself).
 ## Progress log
 
 - 2026-08-31: plan created. No code yet.
+- 2026-08-31: **M5 done.** sandbox.Policy{Egress} in the contract
+  (SetPolicy/Policy on Provider, CanEnforceEgress on Handle); docker
+  enforces with --network none unless opted in; exec reports false
+  forever, and the suite asserts the dev tier's host-read ALLOWANCE as
+  expected behavior. Escape suite: exec tier + output-flood tier
+  (parameterized) + docker tier (AGENTD_DOCKER=1 gate, CI enabled) +
+  e2b tier (fake-pinned wire contract incl. files API, egress-by-
+  template, output caps). Forced the right refactor: Handle gained
+  ReadFile/WriteFile and the file tools now go through the handle —
+  os.* on Workdir() was never going to survive a remote workdir. E2B
+  provider experimental (live validation is the gate to supported).
+- 2026-08-31: CI green with AGENTD_DOCKER=1 (test job 40s vs ~29s
+  before — consistent with the alpine pull + container runs; non-
+  verbose go test does not print passing test names, so the docker-tier
+  confirmation is timing-based, stated honestly here).
