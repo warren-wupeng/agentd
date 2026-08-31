@@ -689,26 +689,27 @@ function bindComposer(sessionId, applySessionMeta) {
     input.style.height = "auto";
     send.disabled = true;
     renderOptimisticUserMessage(text, optimisticId);
+    let session = null;
     try {
-      await api.req("POST", `/v1/sessions/${sessionId}/events`, {
+      const appendResp = await api.req("POST", `/v1/sessions/${sessionId}/events`, {
         type: "message.user",
         payload: { content: [{ type: "text", text }], client_message_id: optimisticId },
       });
-      try {
-        await api.req("POST", `/v1/sessions/${sessionId}/run`);
-      } catch (err) {
-        markOptimisticUserMessageFailed(optimisticId);
-        apiErr(err);
+      session = await refreshComposerSession(sessionId, applySessionMeta);
+      if (needsExplicitRun(session, appendResp?.event)) {
+        try {
+          await api.req("POST", `/v1/sessions/${sessionId}/run`);
+        } catch (err) {
+          markOptimisticUserMessageFailed(optimisticId);
+          apiErr(err);
+        }
       }
     } catch (err) {
       removeOptimisticUserMessage(optimisticId);
       apiErr(err);
     }
     if (currentDetail?.id === sessionId) {
-      try {
-        const { session } = await api.req("GET", `/v1/sessions/${sessionId}`);
-        applySessionMeta?.(session);
-      } catch {}
+      session = session || await refreshComposerSession(sessionId, applySessionMeta);
       if (!input.disabled) send.disabled = false;
     }
     input.focus();
@@ -722,6 +723,25 @@ function bindComposer(sessionId, applySessionMeta) {
     input.style.height = Math.min(input.scrollHeight, 160) + "px";
   });
   setTimeout(() => input.focus(), 50);
+}
+
+async function refreshComposerSession(sessionId, applySessionMeta) {
+  if (currentDetail?.id !== sessionId) return null;
+  try {
+    const { session } = await api.req("GET", `/v1/sessions/${sessionId}`);
+    applySessionMeta?.(session);
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function needsExplicitRun(session, event) {
+  const harness = session?.harness;
+  if (!harness || harness === "native") return false;
+  const state = session?.state;
+  if (state === "terminated") return false;
+  return !!event;
 }
 
 function renderOptimisticUserMessage(text, optimisticId) {
