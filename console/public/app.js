@@ -686,7 +686,9 @@ function rememberWorkflowRun(run) {
   if (!ts) return;
   const cache = wfRunCache().filter((r) => r.id !== run.id);
   cache.unshift({ id: run.id, name: run.name, ts, status: run.status });
-  localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
+  try {
+    localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
+  } catch {}
 }
 async function wfRuns(limit = 20) {
   const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
