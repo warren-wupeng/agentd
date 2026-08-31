@@ -417,7 +417,7 @@ async function selectSession(sessionId) {
   const tr = $("#tr");
 
   // history replay (the durable part), then live tail
-  const { events } = await api.req("GET", `/v1/sessions/${sessionId}/events?limit=300`);
+  const events = await fetchSessionEvents(sessionId);
   if (currentDetail?.id !== sessionId) return;
   if (!events.length) {
     tr.innerHTML = `<div class="empty"><div class="t">会话还是空的 — 发第一条消息开始</div></div>`;
@@ -442,6 +442,18 @@ async function selectSession(sessionId) {
 
   pollSessionMeta(sessionId);
   bindComposer(sessionId);
+}
+
+async function fetchSessionEvents(sessionId, limit = 300) {
+  const events = [];
+  let offset = 0;
+  while (true) {
+    const { events: page = [] } = await api.req("GET", `/v1/sessions/${sessionId}/events?offset=${offset}&limit=${limit}`);
+    events.push(...page);
+    if (page.length < limit) break;
+    offset += page.length;
+  }
+  return events;
 }
 
 function teardownDetail() {
@@ -675,13 +687,9 @@ function rememberWorkflowRun(run) {
   localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
 }
 async function wfRuns(limit = 20) {
-  try {
-    const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
-    runs.forEach(rememberWorkflowRun);
-    return runs.map((run) => ({ ...run, ts: run.created_at || run.ts })).filter((run) => run.ts);
-  } catch {
-    return wfRunCache();
-  }
+  const { runs } = await api.req("GET", `/v1/workflows?limit=${limit}`);
+  runs.forEach(rememberWorkflowRun);
+  return runs.map((run) => ({ ...run, ts: run.created_at || run.ts })).filter((run) => run.ts);
 }
 function wfRunStatuses(runs) { return runs.map((r) => r.status || "?"); }
 
@@ -734,14 +742,22 @@ async function viewWorkflows(root) {
 
   let wfSelected = null, wfPoll = null;
 
+  let wfRunsError = "";
+
   await renderRunList();
-  const initialRuns = await wfRuns();
+  const initialRuns = await wfRuns().catch(() => []);
   if (initialRuns[0]) selectRun(initialRuns[0].id);
 
   async function renderRunList() {
     const box = $("#wf-runs");
-    const runs = await wfRuns();
-    box.innerHTML = "<h3>运行历史</h3>" + (runs.length ? "" : "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>");
+    let runs = [];
+    try {
+      wfRunsError = "";
+      runs = await wfRuns();
+    } catch {
+      wfRunsError = "无法加载服务器上的运行历史";
+    }
+    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--bad)'>${wfRunsError}</div>` : ""}${!wfRunsError && !runs.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
     for (const r of runs) {
       const el = document.createElement("div");
       el.className = "runitem" + (r.id === wfSelected ? " sel" : "");
