@@ -328,6 +328,7 @@ function agentCreateModal(done) {
 
 let currentDetail = null; // { id, es, pollState, maxSeq }
 let optimisticSeq = 0;
+let optimisticMessageSeq = 0;
 
 async function viewSessions(root, sessionId) {
   root.innerHTML = `
@@ -417,8 +418,8 @@ async function selectSession(sessionId) {
     </div>`;
   const tr = $("#tr");
 
-  const metaReady = pollSessionMeta(sessionId);
-  bindComposer(sessionId);
+  const applySessionMeta = await pollSessionMeta(sessionId);
+  bindComposer(sessionId, applySessionMeta);
 
   // history replay (the durable part), then live tail
   const replayMaxSeq = await fetchSessionEvents(sessionId);
@@ -444,7 +445,6 @@ async function selectSession(sessionId) {
   });
   es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
 
-  await metaReady;
 }
 
 async function fetchSessionEvents(sessionId, limit = 300) {
@@ -478,10 +478,7 @@ function scrollBottom() {
 }
 
 async function pollSessionMeta(sessionId) {
-  const update = async () => {
-    if (currentDetail?.id !== sessionId) return;
-    let s;
-    try { ({ session: s } = await api.req("GET", `/v1/sessions/${sessionId}`)); } catch { return; }
+  const applySessionMeta = (s) => {
     if (currentDetail?.id !== sessionId) return;
     renderHead(s);
     const busy = s.state === "running" || s.state === "rescheduling";
@@ -489,8 +486,15 @@ async function pollSessionMeta(sessionId) {
     $("#cp-input").disabled = busy;
     $("#cp-input").placeholder = busy ? "agent 正在运行…" : "给 agent 发送消息…";
   };
+  const update = async () => {
+    if (currentDetail?.id !== sessionId) return;
+    let s;
+    try { ({ session: s } = await api.req("GET", `/v1/sessions/${sessionId}`)); } catch { return; }
+    applySessionMeta(s);
+  };
   await update();
   currentDetail.poll = setInterval(update, 1500);
+  return applySessionMeta;
 }
 
 async function renderHead(s) {
@@ -575,10 +579,14 @@ function renderEventBody(ev) {
     dropEphemeral();
     const blocks = p.content || [];
     const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    const existing = [...tr.querySelectorAll('.msg.user[data-optimistic="1"]')].find((el) => el.dataset.text === text);
-    if (existing) {
-      existing.dataset.optimistic = "0";
-      return;
+    const optimisticId = p.client_message_id || null;
+    if (optimisticId) {
+      const existing = tr.querySelector(`.msg.user[data-optimistic="1"][data-optimistic-id="${CSS.escape(optimisticId)}"]`);
+      if (existing) {
+        existing.dataset.optimistic = "0";
+        existing.removeAttribute("data-optimistic-id");
+        return;
+      }
     }
     const m = document.createElement("div");
     m.className = "msg user";
@@ -658,26 +666,33 @@ function dropEphemeral() {
   if (currentDetail?.ephemeral) { currentDetail.ephemeral.el.remove(); currentDetail.ephemeral = null; }
 }
 
-function bindComposer(sessionId) {
+function bindComposer(sessionId, applySessionMeta) {
   const input = $("#cp-input");
   const send = $("#cp-send");
   const doSend = async () => {
     const text = input.value.trim();
     if (!text || send.disabled) return;
+    const optimisticId = `client-${++optimisticMessageSeq}`;
     input.value = "";
     input.style.height = "auto";
     send.disabled = true;
-    renderOptimisticUserMessage(text);
+    renderOptimisticUserMessage(text, optimisticId);
     try {
       await api.req("POST", `/v1/sessions/${sessionId}/events`, {
         type: "message.user",
-        payload: { content: [{ type: "text", text }] },
+        payload: { content: [{ type: "text", text }], client_message_id: optimisticId },
       });
-      // wake the actor; 409 (already running) is fine
       await api.req("POST", `/v1/sessions/${sessionId}/run`).catch(() => {});
     } catch (err) {
-      removeOptimisticUserMessage(text);
+      removeOptimisticUserMessage(optimisticId);
       apiErr(err);
+    }
+    if (currentDetail?.id === sessionId) {
+      try {
+        const { session } = await api.req("GET", `/v1/sessions/${sessionId}`);
+        applySessionMeta?.(session);
+      } catch {}
+      if (!input.disabled) send.disabled = false;
     }
     input.focus();
   };
@@ -692,24 +707,23 @@ function bindComposer(sessionId) {
   setTimeout(() => input.focus(), 50);
 }
 
-function renderOptimisticUserMessage(text) {
+function renderOptimisticUserMessage(text, optimisticId) {
   const tr = $("#tr");
   if (!tr || !currentDetail) return;
   tr.querySelector(".empty")?.remove();
   const m = document.createElement("div");
   m.className = "msg user";
   m.dataset.optimistic = "1";
-  m.dataset.text = text;
-  m.dataset.optimisticId = String(++optimisticSeq);
+  m.dataset.optimisticId = optimisticId;
+  m.dataset.localOrder = String(++optimisticSeq);
   m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
   tr.appendChild(m);
   scrollBottom();
 }
 
-function removeOptimisticUserMessage(text) {
+function removeOptimisticUserMessage(optimisticId) {
   const tr = $("#tr");
-  const optimistic = [...(tr?.querySelectorAll('.msg.user[data-optimistic="1"]') || [])].find((el) => el.dataset.text === text);
-  optimistic?.remove();
+  tr?.querySelector(`.msg.user[data-optimistic="1"][data-optimistic-id="${CSS.escape(optimisticId)}"]`)?.remove();
 }
 
 /* ================= workflows ================= */
