@@ -4,6 +4,9 @@
 //
 //	agentd-server serve     Run the HTTP API (default).
 //	agentd-server migrate   Apply database migrations and exit.
+//
+//	agentd-server eval     Score agent versions on a dataset (M7).
+//	agentd-server eval-export  Mine a case stub from a session trace.
 package main
 
 import (
@@ -60,8 +63,12 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		return serve(cfg)
+	case "eval":
+		return runEval(args[1:])
+	case "eval-export":
+		return runEvalExport(args[1:])
 	default:
-		return agentderr.InvalidInput("unknown command "+cmd, "valid commands: serve, migrate")
+		return agentderr.InvalidInput("unknown command "+cmd, "valid commands: serve, migrate, eval, eval-export")
 	}
 }
 

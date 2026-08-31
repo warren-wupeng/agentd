@@ -1,0 +1,16 @@
+{
+  "name": "smoke-live",
+  "cases": [
+    {"id": "greets", "input": "Greet me in exactly one short sentence.",
+     "rubric": [
+       {"kind": "stop_reason", "arg": "end_turn"},
+       {"kind": "not_contains", "arg": "error"},
+       {"kind": "max_turns", "arg": "2"}
+     ]},
+    {"id": "pineapple", "input": "Tell me one fruit name.",
+     "rubric": [
+       {"kind": "contains", "arg": "pineapple"},
+       {"kind": "stop_reason", "arg": "end_turn"}
+     ]}
+  ]
+}
