@@ -416,6 +416,9 @@ async function selectSession(sessionId) {
     </div>`;
   const tr = $("#tr");
 
+  const metaReady = pollSessionMeta(sessionId);
+  bindComposer(sessionId);
+
   // history replay (the durable part), then live tail
   const events = await fetchSessionEvents(sessionId);
   if (currentDetail?.id !== sessionId) return;
@@ -440,8 +443,7 @@ async function selectSession(sessionId) {
   });
   es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
 
-  pollSessionMeta(sessionId);
-  bindComposer(sessionId);
+  await metaReady;
 }
 
 async function fetchSessionEvents(sessionId, limit = 300) {
@@ -682,12 +684,14 @@ function wfRunCache() {
   try { return JSON.parse(localStorage.getItem("agentd.wf.runs") || "[]"); } catch { return []; }
 }
 function rememberWorkflowRun(run) {
-  const ts = run.created_at || run.ts;
+  const cache = wfRunCache();
+  const existing = cache.find((r) => r.id === run.id);
+  const ts = run.created_at || run.ts || existing?.ts;
   if (!ts) return;
-  const cache = wfRunCache().filter((r) => r.id !== run.id);
-  cache.unshift({ id: run.id, name: run.name, ts, status: run.status });
+  const next = cache.filter((r) => r.id !== run.id);
+  next.unshift({ id: run.id, name: run.name || existing?.name || "workflow", ts, status: run.status || existing?.status });
   try {
-    localStorage.setItem("agentd.wf.runs", JSON.stringify(cache.slice(0, 20)));
+    localStorage.setItem("agentd.wf.runs", JSON.stringify(next.slice(0, 20)));
   } catch {}
 }
 async function wfRuns(limit = 20) {
