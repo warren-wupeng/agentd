@@ -58,14 +58,18 @@ type Session struct {
 }
 
 // legalTransitions is the session state machine. terminated is final.
+// rescheduling → idle exists so a kick that finds nothing to do (or a
+// legacy row from the old creation default) can park honestly.
 var legalTransitions = map[SessionState][]SessionState{
-	StateRescheduling: {StateRunning, StateTerminated},
+	StateRescheduling: {StateRunning, StateIdle, StateTerminated},
 	StateRunning:      {StateIdle, StateTerminated},
 	StateIdle:         {StateRunning, StateTerminated},
 	StateTerminated:   {},
 }
 
-func legalTargets(from SessionState) []SessionState { return legalTransitions[from] }
+// LegalTargets reports the states a session may move to next. Read-only
+// view of legalTransitions for clients and remediation hints.
+func LegalTargets(from SessionState) []SessionState { return legalTransitions[from] }
 
 // Actor identifies who produced an event.
 type Actor string

@@ -139,7 +139,7 @@ func TestSessionPinsVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sess.AgentVersion != 1 || sess.State != store.StateRescheduling {
+	if sess.AgentVersion != 1 || sess.State != store.StateIdle {
 		t.Fatalf("bad session: %+v", sess)
 	}
 	if created.Type != store.EventSessionCreated || created.Actor != store.ActorSystem {
@@ -177,9 +177,21 @@ func TestTransitionStateMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Illegal: rescheduling → idle.
-	if _, _, err := st.TransitionSession(ctx, sess.ID, store.StateIdle, nil); err == nil {
-		t.Fatal("expected invalid transition rescheduling→idle")
+	// A fresh session is born idle (migration 0004): nothing is queued.
+	if sess.State != store.StateIdle {
+		t.Fatalf("new session state = %q, want idle", sess.State)
+	}
+
+	// rescheduling → idle is legal (a kick that finds nothing to do parks
+	// honestly instead of waiting forever).
+	legal := false
+	for _, s := range store.LegalTargets(store.StateRescheduling) {
+		if s == store.StateIdle {
+			legal = true
+		}
+	}
+	if !legal {
+		t.Fatal("rescheduling must be able to park to idle")
 	}
 
 	// Legal chain: → running → idle(stop_reason) → running → terminated.

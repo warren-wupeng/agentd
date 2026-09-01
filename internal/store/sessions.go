@@ -156,7 +156,7 @@ func (s *Store) TransitionSession(ctx context.Context, id uuid.UUID, to SessionS
 	}
 
 	legal := false
-	for _, t := range legalTargets(from) {
+	for _, t := range LegalTargets(from) {
 		if t == to {
 			legal = true
 			break
@@ -165,7 +165,7 @@ func (s *Store) TransitionSession(ctx context.Context, id uuid.UUID, to SessionS
 	if !legal {
 		return nil, nil, agentderr.InvalidTransition(
 			fmt.Sprintf("cannot transition session from %q to %q", from, to),
-			fmt.Sprintf("legal transitions from %q: %s", from, joinStates(legalTargets(from))))
+			fmt.Sprintf("legal transitions from %q: %s", from, joinStates(LegalTargets(from))))
 	}
 
 	var sess Session

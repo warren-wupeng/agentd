@@ -473,12 +473,18 @@ func TestRunner_DrivesSessionToEndTurn(t *testing.T) {
 	runner.Kick(e.sess.ID)
 
 	deadline := time.Now().Add(10 * time.Second)
+	seenRunning := false
 	for {
 		sess, err := e.st.GetSession(ctx, e.sess.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sess.State == store.StateIdle {
+		if sess.State == store.StateRunning {
+			seenRunning = true
+		}
+		// idle only counts as parked once the turn has actually started:
+		// the session is BORN idle, before the runner's kick lands.
+		if seenRunning && sess.State == store.StateIdle {
 			if sess.StopReason != nil && *sess.StopReason == store.StopEndTurn {
 				break
 			}
@@ -490,7 +496,7 @@ func TestRunner_DrivesSessionToEndTurn(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// state machine trail: rescheduling → running → idle
+	// state machine trail: idle → running → idle
 	states := []string{}
 	for _, ev := range e.events(t) {
 		if ev.Type != store.EventSessionStateChanged {
@@ -503,8 +509,8 @@ func TestRunner_DrivesSessionToEndTurn(t *testing.T) {
 		_ = json.Unmarshal(ev.Payload, &pl)
 		states = append(states, pl.From+"→"+pl.To)
 	}
-	if len(states) < 2 || states[0] != "rescheduling→running" {
-		t.Fatalf("state trail = %v, want rescheduling→running then →idle", states)
+	if len(states) < 2 || states[0] != "idle→running" {
+		t.Fatalf("state trail = %v, want idle→running then →idle", states)
 	}
 	if states[len(states)-1] != "running→idle" {
 		t.Fatalf("last transition = %s, want running→idle", states[len(states)-1])

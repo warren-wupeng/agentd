@@ -283,7 +283,7 @@ func TestReplay_SessionEventLog(t *testing.T) {
 
 	// Full page: 51 events (50 + session.created), cursor present at limit.
 	code, resp = s.do("GET", "/v1/sessions/"+sessID, nil)
-	if code != http.StatusOK || resp["session"].(map[string]any)["state"] != "rescheduling" {
+	if code != http.StatusOK || resp["session"].(map[string]any)["state"] != "idle" {
 		t.Fatalf("get session: %d %s", code, errStr(resp))
 	}
 	code, resp = s.do("GET", "/v1/sessions/"+sessID+"/events?limit=10", nil)
@@ -418,7 +418,7 @@ func TestReplay_RunEndpointKicksActor(t *testing.T) {
 		t.Fatalf("run response missing accepted: %v", resp)
 	}
 	// state untouched synchronously — the actor moves it asynchronously
-	if resp["session"].(map[string]any)["state"] != "rescheduling" {
+	if resp["session"].(map[string]any)["state"] != "idle" {
 		t.Fatalf("run must not mutate state inline: %v", resp)
 	}
 

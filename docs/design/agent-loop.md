@@ -106,8 +106,10 @@ One goroutine per *active* session, actor-style, fed by a mailbox (channel).
 The actor owns no truth — it just runs `step` in a loop until the turn parks.
 Idle sessions hold no goroutine: they are rows whose tail says "waiting", and
 any event append (user message, escalation answer, scheduler tick) re-spawns
-the actor. This is what `rescheduling → running ↔ idle` means physically:
-the state machine is in the database; goroutines are an execution detail.
+the actor. This is what `running ⇄ idle` means physically (sessions are born
+`idle`; `rescheduling` is the transient kick-in-flight state and a kick that
+finds nothing to do parks back to `idle`): the state machine is in the
+database; goroutines are an execution detail.
 
 Multiple orchestrator replicas shard sessions by consistent hash on
 `session_id`; a `SELECT ... FOR UPDATE SKIP LOCKED` claim on the session row
