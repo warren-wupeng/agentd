@@ -38,10 +38,10 @@ const api = {
 function timeAgo(iso) {
   if (!iso) return "";
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return "刚刚";
-  if (s < 3600) return Math.floor(s / 60) + " 分钟前";
-  if (s < 86400) return Math.floor(s / 3600) + " 小时前";
-  return Math.floor(s / 86400) + " 天前";
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
 }
 
 function toast(msg, kind = "") {
@@ -88,9 +88,9 @@ const STATE_META = {
 };
 function stateChip(state) {
   const [color, live] = STATE_META[state] || ["", false];
-  return `<span class="chip ${color}">${live ? '<span class="pulse"></span>' : ""}${esc(state)}${state === "idle" ? " · 就绪" : ""}</span>`;
+  return `<span class="chip ${color}">${live ? '<span class="pulse"></span>' : ""}${esc(state)}${state === "idle" ? " · ready" : ""}</span>`;
 }
-const STOP_LABEL = { end_turn: "完成", requires_action: "等待输入", retries_exhausted: "重试耗尽" };
+const STOP_LABEL = { end_turn: "completed", requires_action: "waiting for input", retries_exhausted: "retries exhausted" };
 function stopLabel(r) { return STOP_LABEL[r] || r; }
 
 function mdLite(text) {
@@ -161,28 +161,28 @@ async function viewOverview(root) {
 
   root.innerHTML = `
     <div class="view-head">
-      <h1>概览</h1><span class="sub">agentd 控制面运行状况</span>
+      <h1>Overview</h1><span class="sub">the agentd control plane at a glance</span>
       <span class="spacer"></span>
-      <button class="btn ghost" id="ov-new-agent">新建 Agent</button>
-      <button class="btn primary" id="ov-new-session">发起会话</button>
+      <button class="btn ghost" id="ov-new-agent">New Agent</button>
+      <button class="btn primary" id="ov-new-session">New Session</button>
     </div>
     <div class="stats">
-      <div class="card stat"><div class="label">Agents</div><div class="value">${agents.length}</div><div class="hintv">已注册的 agent 配置</div></div>
-      <div class="card stat"><div class="label">运行中的会话</div><div class="value">${running}</div><div class="hintv">running / rescheduling</div></div>
-      <div class="card stat"><div class="label">会话总数</div><div class="value">${sessions.length}</div><div class="hintv">全部 harness</div></div>
-      <div class="card stat"><div class="label">Workflow 运行</div><div class="value">${runs.length}</div><div class="hintv">${wfActive ? wfActive + " 个进行中" : "最近 " + (runs.length ? timeAgo(runs[0].ts) : "—")}</div></div>
+      <div class="card stat"><div class="label">Agents</div><div class="value">${agents.length}</div><div class="hintv">registered agent configs</div></div>
+      <div class="card stat"><div class="label">Running sessions</div><div class="value">${running}</div><div class="hintv">running / rescheduling</div></div>
+      <div class="card stat"><div class="label">Total sessions</div><div class="value">${sessions.length}</div><div class="hintv">all harnesses</div></div>
+      <div class="card stat"><div class="label">Workflow runs</div><div class="value">${runs.length}</div><div class="hintv">${wfActive ? wfActive + " active" : "last " + (runs.length ? timeAgo(runs[0].ts) : "—")}</div></div>
     </div>
     <div class="grid-2">
       <div class="card">
-        <h3>最近会话</h3>
+        <h3>Recent sessions</h3>
         <div class="rows" id="ov-sessions">
-          ${recent.length ? "" : `<div class="empty"><div class="t">还没有会话 — 从右上角发起第一个</div></div>`}
+          ${recent.length ? "" : `<div class="empty"><div class="t">No sessions yet — start one from the top right</div></div>`}
         </div>
       </div>
       <div class="card">
         <h3>Agents</h3>
         <div class="rows" id="ov-agents">
-          ${agents.length ? "" : `<div class="empty"><div class="t">还没有 agent — 先创建一个</div></div>`}
+          ${agents.length ? "" : `<div class="empty"><div class="t">No agents yet — create one first</div></div>`}
         </div>
       </div>
     </div>`;
@@ -193,7 +193,7 @@ async function viewOverview(root) {
     row.className = "rowitem clickable";
     row.innerHTML = `
       <span class="mono faint">${short(s.id)}</span>
-      <span class="grow">${esc(agentsById.get(s.agent_id)?.name || "未知 agent")} · ${esc(s.harness)}</span>
+      <span class="grow">${esc(agentsById.get(s.agent_id)?.name || "unknown agent")} · ${esc(s.harness)}</span>
       ${stateChip(s.state)}`;
     row.addEventListener("click", () => (location.hash = "#/sessions/" + s.id));
     slist.appendChild(row);
@@ -220,9 +220,9 @@ async function viewOverview(root) {
 async function viewAgents(root) {
   root.innerHTML = `
     <div class="view-head">
-      <h1>Agents</h1><span class="sub">版本化的 agent 配置，更新即产生新版本</span>
+      <h1>Agents</h1><span class="sub">versioned agent configs — every update creates a new version</span>
       <span class="spacer"></span>
-      <button class="btn primary" id="ag-new">＋ 新建 Agent</button>
+      <button class="btn primary" id="ag-new">＋ New Agent</button>
     </div>
     <div class="agent-grid" id="ag-grid"></div>`;
   $("#ag-new").addEventListener("click", () => agentCreateModal(loadGrid));
@@ -233,7 +233,7 @@ async function viewAgents(root) {
     const grid = $("#ag-grid");
     grid.innerHTML = "";
     if (!agents.length) {
-      grid.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🤖</div><div class="t">还没有 agent</div><button class="btn primary" id="ag-empty-new">创建第一个 agent</button></div></div>`;
+      grid.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🤖</div><div class="t">No agents yet</div><button class="btn primary" id="ag-empty-new">Create the first agent</button></div></div>`;
       $("#ag-empty-new").addEventListener("click", () => agentCreateModal(loadGrid));
       return;
     }
@@ -242,18 +242,18 @@ async function viewAgents(root) {
       card.className = "card agent-card";
       card.innerHTML = `
         <div class="head"></div>
-        <div class="desc">${esc(a.description || "（无描述）")}</div>
+        <div class="desc">${esc(a.description || "(no description)")}</div>
         <div class="meta" id="m-${a.id}"></div>
         <div class="versions" id="v-${a.id}" hidden></div>
         <div class="foot">
-          <button class="btn primary sm" data-act="run">发起会话</button>
-          <button class="btn ghost sm" data-act="ver">版本历史</button>
+          <button class="btn primary sm" data-act="run">New session</button>
+          <button class="btn ghost sm" data-act="ver">Versions</button>
           <span style="flex:1"></span>
-          <button class="btn danger-ghost sm" data-act="del">删除</button>
+          <button class="btn danger-ghost sm" data-act="del">Delete</button>
         </div>`;
       $(".head", card).append(avatarEl(a.name));
       $(".head", card).insertAdjacentHTML("beforeend",
-        `<div><div class="name">${esc(a.name)}</div><div class="faint" style="font-size:11.5px">创建于 ${timeAgo(a.created_at)}</div></div>`);
+        `<div><div class="name">${esc(a.name)}</div><div class="faint" style="font-size:11.5px">created ${timeAgo(a.created_at)}</div></div>`);
 
       // model chip: fetch pinned latest version config lazily
       api.req("GET", `/v1/agents/${a.id}/versions/${a.latest_version}`).then(({ version }) => {
@@ -276,9 +276,9 @@ async function viewAgents(root) {
         box.hidden = false;
       });
       $('[data-act="del"]', card).addEventListener("click", () => {
-        if (!confirm(`删除 agent「${a.name}」？有关联会话时会被拒绝。`)) return;
+        if (!confirm(`Delete agent "${a.name}"? Deletion is rejected while sessions reference it.`)) return;
         api.req("DELETE", `/v1/agents/${a.id}`)
-          .then(() => { toast("已删除 " + a.name, "ok"); loadGrid(); })
+          .then(() => { toast("Deleted " + a.name, "ok"); loadGrid(); })
           .catch(apiErr);
       });
       grid.appendChild(card);
@@ -288,19 +288,19 @@ async function viewAgents(root) {
 
 function agentCreateModal(done) {
   const m = openModal(`
-    <h2>新建 Agent</h2>
+    <h2>New Agent</h2>
     <form id="agent-form">
-      <label class="field"><span>名称</span><input name="name" required placeholder="coder"></label>
-      <label class="field"><span>描述</span><input name="description" placeholder="负责写代码的 agent（可选）"></label>
-      <label class="field"><span>模型</span><input name="model" required list="model-list" placeholder="glm-5.3-flash">
+      <label class="field"><span>Name</span><input name="name" required placeholder="coder"></label>
+      <label class="field"><span>Description</span><input name="description" placeholder="writes code (optional)"></label>
+      <label class="field"><span>Model</span><input name="model" required list="model-list" placeholder="glm-5.3-flash">
         <datalist id="model-list">${MODELS.map((x) => `<option value="${x}">`).join("")}</datalist></label>
       <label class="field"><span>System prompt</span><textarea name="system_prompt" rows="4" placeholder="You are a careful coding agent…"></textarea></label>
-      <div class="field"><span>工具</span><div class="checks">
+      <div class="field"><span>Tools</span><div class="checks">
         ${TOOLS.map((t) => `<label><input type="checkbox" name="tool" value="${t}" checked>${t}</label>`).join("")}
       </div></div>
       <div class="modal-foot">
-        <button type="button" class="btn ghost" id="cancel">取消</button>
-        <button type="submit" class="btn primary">创建</button>
+        <button type="button" class="btn ghost" id="cancel">Cancel</button>
+        <button type="submit" class="btn primary">Create</button>
       </div>
     </form>`);
   $("#cancel", m).addEventListener("click", closeModal);
@@ -318,7 +318,7 @@ function agentCreateModal(done) {
         },
       });
       closeModal();
-      toast("Agent 已创建", "ok");
+      toast("Agent created", "ok");
       done && done();
     } catch (err) { apiErr(err); }
   });
@@ -335,27 +335,27 @@ let healthPollTimer = null;
 async function viewSessions(root, sessionId) {
   root.innerHTML = `
     <div class="view-head">
-      <h1>会话</h1><span class="sub">每次运行都是一条 append-only 事件流</span>
+      <h1>Sessions</h1><span class="sub">every run is an append-only event stream</span>
       <span class="spacer"></span>
-      <button class="btn primary" id="ss-new">＋ 发起会话</button>
+      <button class="btn primary" id="ss-new">＋ New Session</button>
     </div>
     <div class="sess-layout">
       <div class="card sess-list" id="ss-list"></div>
       <div class="card transcript-card" id="ss-detail">
-        <div class="empty" style="flex:1"><div class="big">💬</div><div class="t">选择左侧会话，或发起一个新会话</div></div>
+        <div class="empty" style="flex:1"><div class="big">💬</div><div class="t">Pick a session on the left, or start a new one</div></div>
       </div>
     </div>`;
   $("#ss-new").addEventListener("click", () => sessionCreateModal());
 
   await refreshSessionList();
   every(5000, refreshSessionList);
-  if (sessionId) selectSession(sessionId).catch((e) => toast("无法打开会话：" + e.message, "err"));
+  if (sessionId) selectSession(sessionId).catch((e) => toast("Cannot open session: " + e.message, "err"));
 
   async function refreshSessionList() {
     const [{ sessions }, byId] = await Promise.all([api.req("GET", "/v1/sessions?limit=60"), agentMap()]);
     const list = $("#ss-list");
     if (!list) return;
-    list.innerHTML = sessions.length ? "" : `<div class="empty"><div class="t">暂无会话</div></div>`;
+    list.innerHTML = sessions.length ? "" : `<div class="empty"><div class="t">No sessions yet</div></div>`;
     for (const s of [...sessions].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))) {
       const el = document.createElement("div");
       el.className = "sess-item" + (currentDetail?.id === s.id ? " sel" : "");
@@ -372,19 +372,19 @@ async function viewSessions(root, sessionId) {
 function sessionCreateModal(presetAgent) {
   (async () => {
     const { agents } = await api.req("GET", "/v1/agents?limit=100");
-    if (!agents.length) { closeModal(); toast("请先创建一个 agent", "err"); location.hash = "#/agents"; return; }
+    if (!agents.length) { closeModal(); toast("Create an agent first", "err"); location.hash = "#/agents"; return; }
     const m = openModal(`
-      <h2>发起会话</h2>
+      <h2>Start a Session</h2>
       <label class="field"><span>Agent</span><select id="ns-agent">
         ${agents.map((a) => `<option value="${a.id}" ${presetAgent?.id === a.id ? "selected" : ""}>${esc(a.name)} · v${a.latest_version}</option>`).join("")}
       </select></label>
       <label class="field"><span>Harness</span><select id="ns-harness">
-        <option value="native">native（内置循环）</option>
-        <option value="opencode">opencode（实验）</option>
+        <option value="native">native (built-in loop)</option>
+        <option value="opencode">opencode (experimental)</option>
       </select></label>
       <div class="modal-foot">
-        <button type="button" class="btn ghost" id="cancel">取消</button>
-        <button class="btn primary" id="go">开始</button>
+        <button type="button" class="btn ghost" id="cancel">Cancel</button>
+        <button class="btn primary" id="go">Start</button>
       </div>`);
     $("#cancel", m).addEventListener("click", closeModal);
     $("#go", m).addEventListener("click", async () => {
@@ -394,7 +394,7 @@ function sessionCreateModal(presetAgent) {
           harness: $("#ns-harness").value,
         });
         closeModal();
-        toast("会话已创建", "ok");
+        toast("Session created", "ok");
         location.hash = "#/sessions/" + session.id;
       } catch (err) { apiErr(err); }
     });
@@ -409,14 +409,14 @@ async function selectSession(sessionId) {
 
   const detail = $("#ss-detail");
   detail.innerHTML = `
-    <div class="transcript-head" id="tr-head"><span class="muted">加载中…</span></div>
+    <div class="transcript-head" id="tr-head"><span class="muted">Loading…</span></div>
     <div class="transcript" id="tr"></div>
     <div class="composer">
       <div class="box">
-        <textarea id="cp-input" rows="1" placeholder="给 agent 发送消息…"></textarea>
-        <button class="btn primary" id="cp-send">发送</button>
+        <textarea id="cp-input" rows="1" placeholder="Message the agent…"></textarea>
+        <button class="btn primary" id="cp-send">Send</button>
       </div>
-      <div class="hint">Enter 发送 · Shift+Enter 换行 · 运行中不可发送</div>
+      <div class="hint">Enter to send · Shift+Enter for a newline · locked while running</div>
     </div>`;
   const tr = $("#tr");
 
@@ -427,7 +427,7 @@ async function selectSession(sessionId) {
   const replayMaxSeq = await fetchSessionEvents(sessionId);
   if (currentDetail?.id !== sessionId) return;
   if (!currentDetail.replaySeq) {
-    tr.innerHTML = `<div class="empty"><div class="t">会话还是空的 — 发第一条消息开始</div></div>`;
+    tr.innerHTML = `<div class="empty"><div class="t">Session is empty — send the first message to begin</div></div>`;
   }
   currentDetail.maxSeq = Math.max(currentDetail.maxSeq, currentDetail.replaySeq, replayMaxSeq);
   tr.scrollTop = tr.scrollHeight;
@@ -486,7 +486,7 @@ async function pollSessionMeta(sessionId) {
     const busy = s.state === "running" || s.state === "rescheduling";
     $("#cp-send").disabled = busy;
     $("#cp-input").disabled = busy;
-    $("#cp-input").placeholder = busy ? "agent 正在运行…" : "给 agent 发送消息…";
+    $("#cp-input").placeholder = busy ? "agent is running…" : "Message the agent…";
   };
   const update = async () => {
     if (currentDetail?.id !== sessionId) return;
@@ -509,13 +509,13 @@ async function renderHead(s) {
       .then(({ agent }) =>
         api.req("GET", `/v1/agents/${s.agent_id}/versions/${s.agent_version}`)
           .then(({ version }) => ({ name: agent.name, model: version.config?.model || "" })))
-      .catch(() => ({ name: "未知 agent", model: "" }));
+      .catch(() => ({ name: "unknown agent", model: "" }));
   }
   const { name: agentName, model } = await currentDetail.headInfo;
   if (currentDetail?.id !== s.id) return;
   head.innerHTML = `
     <span class="title">${esc(agentName)}</span>
-    <span class="sid" title="点击复制完整 ID">${short(s.id)}</span>
+    <span class="sid" title="Click to copy the full ID">${short(s.id)}</span>
     <span class="chip outline">${esc(s.harness)}</span>
     ${model ? `<span class="chip blue">${esc(model)}</span>` : ""}
     ${stateChip(s.state)}
@@ -526,9 +526,9 @@ async function renderHead(s) {
     try {
       if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable");
       await navigator.clipboard.writeText(s.id);
-      toast("会话 ID 已复制", "ok");
+      toast("Session ID copied", "ok");
     } catch {
-      toast("复制失败，请手动复制会话 ID", "err");
+      toast("Copy failed — copy the session ID manually", "err");
     }
   });
 }
@@ -538,10 +538,10 @@ function toolCardEl(tc) {
   d.className = "toolcard";
   d.innerHTML = `
     <summary><span class="tw">▶</span><span>🛠</span><span class="tn">${esc(tc.name)}</span>
-      <span class="tr chip amber"><span class="pulse"></span>运行中</span></summary>
+      <span class="tr chip amber"><span class="pulse"></span>running</span></summary>
     <div class="tbody">
-      <div class="tl">输入</div><pre class="tin">${esc(JSON.stringify(tc.input, null, 2))}</pre>
-      <div class="tl" style="display:none">输出</div><pre class="tout" style="display:none"></pre>
+      <div class="tl">Input</div><pre class="tin">${esc(JSON.stringify(tc.input, null, 2))}</pre>
+      <div class="tl" style="display:none">Output</div><pre class="tout" style="display:none"></pre>
     </div>`;
   return d;
 }
@@ -576,9 +576,9 @@ function renderEventBody(ev) {
   if (ev.type === "turn.completed") {
     const d = document.createElement("div");
     d.className = "divider";
-    d.textContent = p.error ? `turn 结束 · ${stopLabel(p.stop_reason || "")} · ${p.error}`
-      : p.stop_reason && p.stop_reason !== "end_turn" ? `turn 结束 · ${stopLabel(p.stop_reason)}`
-      : "turn 完成";
+    d.textContent = p.error ? `turn ended · ${stopLabel(p.stop_reason || "")} · ${p.error}`
+      : p.stop_reason && p.stop_reason !== "end_turn" ? `turn ended · ${stopLabel(p.stop_reason)}`
+      : "turn completed";
     tr.appendChild(d);
     return;
   }
@@ -602,7 +602,7 @@ function renderEventBody(ev) {
     }
     const m = document.createElement("div");
     m.className = "msg user";
-    m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
+    m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>(empty message)</p>"}</div>`;
     tr.appendChild(m);
     return;
   }
@@ -620,7 +620,7 @@ function renderEventBody(ev) {
         bubble.appendChild(card);
       }
     }
-    if (!bubble.childNodes.length) bubble.innerHTML = "<p class='faint'>(空回复)</p>";
+    if (!bubble.childNodes.length) bubble.innerHTML = "<p class='faint'>(empty reply)</p>";
     m.insertAdjacentHTML("afterbegin", `<div class="who">a</div>`);
     m.appendChild(bubble);
     tr.appendChild(m);
@@ -644,7 +644,7 @@ function renderEventBody(ev) {
     const v = card.querySelector(".tr");
     const failed = ev.type === "tool.failed" || p.is_error;
     v.className = "tr chip " + (failed ? "red" : "green");
-    v.textContent = failed ? "失败" : "完成";
+    v.textContent = failed ? "failed" : "done";
     const out = card.querySelector(".tout");
     out.textContent = typeof p.output === "string" ? p.output : JSON.stringify(p.output, null, 2);
     out.style.display = "";
@@ -654,7 +654,7 @@ function renderEventBody(ev) {
   if (ev.type === "escalation.requested") {
     const d = document.createElement("div");
     d.className = "divider";
-    d.textContent = "⚠ 需要人工确认（requires_action）";
+    d.textContent = "⚠ Human approval required (requires_action)";
     tr.appendChild(d);
   }
 }
@@ -753,7 +753,7 @@ function renderOptimisticUserMessage(text, optimisticId) {
   m.dataset.optimistic = "1";
   m.dataset.optimisticId = optimisticId;
   m.dataset.localOrder = String(++optimisticSeq);
-  m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>（空消息）</p>"}</div>`;
+  m.innerHTML = `<div class="bubble">${mdLite(text) || "<p>(empty message)</p>"}</div>`;
   tr.appendChild(m);
   optimisticMessages.set(optimisticId, m);
   scrollBottom();
@@ -770,7 +770,7 @@ function markOptimisticUserMessageFailed(optimisticId) {
   if (!hint) {
     hint = document.createElement("div");
     hint.className = "msg-hint";
-    hint.textContent = "未能启动运行，请重试";
+    hint.textContent = "Failed to start the run — please retry";
     el.appendChild(hint);
   }
 }
@@ -802,34 +802,34 @@ function wfRunStatuses(runs) { return runs.map((r) => r.status || "?"); }
 async function viewWorkflows(root) {
   root.innerHTML = `
     <div class="view-head">
-      <h1>Workflows</h1><span class="sub">DAG 编排：spec 进，产物出</span>
+      <h1>Workflows</h1><span class="sub">DAG orchestration — spec in, artifact out</span>
     </div>
     <div class="wf-layout">
       <div style="display:flex; flex-direction:column; gap:16px;">
         <div class="card">
-          <h3>运行 software-dev 流水线</h3>
-          <label class="field"><span>Agent（各节点共用）</span><select id="wf-agent"></select></label>
+          <h3>Run the software-dev pipeline</h3>
+          <label class="field"><span>Agent (shared by all nodes)</span><select id="wf-agent"></select></label>
           <label class="field"><span>Spec</span><textarea id="wf-spec" rows="5" placeholder="Write a Python function fib(n) (iterative) in solution.py…"></textarea></label>
-          <button class="btn primary" id="wf-run" style="width:100%">运行流水线</button>
+          <button class="btn primary" id="wf-run" style="width:100%">Run pipeline</button>
           <div class="faint" style="font-size:11.5px;margin-top:10px">coder → (reviewer ∥ tester) → merger</div>
         </div>
-        <div class="card runlist" id="wf-runs"><h3>运行历史</h3></div>
+        <div class="card runlist" id="wf-runs"><h3>Run history</h3></div>
       </div>
       <div class="card dag-wrap" id="wf-board">
-        <div class="empty" style="padding:80px 20px"><div class="big">🗂</div><div class="t">发起一次运行，或从左侧历史中选择</div></div>
+        <div class="empty" style="padding:80px 20px"><div class="big">🗂</div><div class="t">Start a run, or pick one from the history</div></div>
       </div>
     </div>`;
 
   const { agents } = await api.req("GET", "/v1/agents?limit=100");
   const sel = $("#wf-agent");
-  sel.innerHTML = agents.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("") || "<option value=''>（无 agent）</option>";
+  sel.innerHTML = agents.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("") || "<option value=''>(no agent)</option>";
   if (agents.length) sel.disabled = false;
 
   $("#wf-run").addEventListener("click", async () => {
     const agentId = sel.value;
     const spec = $("#wf-spec").value.trim();
-    if (!agentId) return toast("请先创建 agent", "err");
-    if (!spec) return toast("请填写 spec", "err");
+    if (!agentId) return toast("Create an agent first", "err");
+    if (!spec) return toast("Please fill in the spec", "err");
     const btn = $("#wf-run");
     btn.disabled = true;
     try {
@@ -839,7 +839,7 @@ async function viewWorkflows(root) {
         n.prompt = n.prompt.replace("{{spec}}", spec);
       }
       const { run } = await api.req("POST", "/v1/workflows", def);
-      toast("流水线已启动 " + short(run.id), "ok");
+      toast("Pipeline started " + short(run.id), "ok");
       await renderRunList();
       selectRun(run.id);
     } catch (err) { apiErr(err); }
@@ -863,10 +863,10 @@ async function viewWorkflows(root) {
         wfRunsError = "";
         wfRunsState = await wfRuns();
       } catch {
-        wfRunsError = "无法加载服务器上的运行历史";
+        wfRunsError = "Could not load run history from the server";
       }
     }
-    box.innerHTML = `<h3>运行历史</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError} <button class="btn ghost" id="wf-runs-retry" style="margin-left:8px">重试</button></div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>暂无运行记录</div>" : ""}`;
+    box.innerHTML = `<h3>Run history</h3>${wfRunsError ? `<div class='faint' style='font-size:12.5px;padding:4px 2px;color:var(--red)'>${wfRunsError} <button class="btn ghost" id="wf-runs-retry" style="margin-left:8px">Retry</button></div>` : ""}${!wfRunsError && !wfRunsState.length ? "<div class='faint' style='font-size:12.5px;padding:4px 2px'>No runs yet</div>" : ""}`;
     $("#wf-runs-retry")?.addEventListener("click", () => renderRunList());
     for (const r of wfRunsState) {
       const el = document.createElement("div");
@@ -899,7 +899,7 @@ async function viewWorkflows(root) {
   function renderDag(run) {
     const board = $("#wf-board");
     const nodes = run.node_states || [];
-    if (!nodes.length) { board.innerHTML = "<div class='empty'>无节点状态</div>"; return; }
+    if (!nodes.length) { board.innerHTML = "<div class='empty'>No node states</div>"; return; }
 
     // level = longest path from roots; group columns
     const defs = new Map(run.definition.nodes.map((n) => [n.id, n]));
@@ -951,7 +951,7 @@ async function viewWorkflows(root) {
     for (const k of Object.keys(cols).sort((a, b) => a - b)) {
       cols[k].forEach((n, i) => {
         const { x, y } = pos[n.id];
-        const meta = [n.session_id ? "sess " + short(n.session_id) : "", n.attempts > 1 ? "重试 " + n.attempts : ""].filter(Boolean).join(" · ");
+        const meta = [n.session_id ? "sess " + short(n.session_id) : "", n.attempts > 1 ? "retry " + n.attempts : ""].filter(Boolean).join(" · ");
         html += `<div class="dag-node st-${esc(n.status)}" data-sid="${esc(n.session_id || "")}" style="left:${x}px;top:${y}px">
           <div class="nid">${n.status === "running" ? '<span class="spin"></span>' : ""}${esc(n.id)}</div>
           <div style="margin-top:5px">${nodeChip(n.status)}</div>
@@ -982,7 +982,7 @@ async function viewWorkflows(root) {
     return `<span class="chip ${c}">${st === "running" ? '<span class="pulse"></span>' : ""}${esc(st)}</span>`;
   }
   function nodeChip(st) {
-    const label = { pending: "等待", running: "运行中", completed: "完成", failed: "失败" }[st] || st;
+    const label = { pending: "pending", running: "running", completed: "done", failed: "failed" }[st] || st;
     const c = { running: "amber", completed: "green", failed: "red" }[st] || "";
     return `<span class="chip ${c}">${label}</span>`;
   }
@@ -1002,10 +1002,10 @@ async function healthPoll() {
         clearTimeout(timeout);
       }
       dot.className = "dot ok";
-      txt.textContent = "API 已连接";
+      txt.textContent = "API connected";
     } catch {
       dot.className = "dot bad";
-      txt.textContent = "API 不可达";
+      txt.textContent = "API unreachable";
     }
   };
   await tick();
