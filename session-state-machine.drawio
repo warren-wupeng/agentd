@@ -1,0 +1,77 @@
+<mxGraphModel adaptiveColors="auto">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <mxCell id="start" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;" vertex="1" parent="1">
+      <mxGeometry x="60" y="315" width="28" height="28" as="geometry"/>
+    </mxCell>
+    <mxCell id="rescheduling" value="rescheduling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1" vertex="1" parent="1">
+      <mxGeometry x="150" y="300" width="150" height="56" as="geometry"/>
+    </mxCell>
+    <mxCell id="running" value="running" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1" vertex="1" parent="1">
+      <mxGeometry x="450" y="300" width="150" height="56" as="geometry"/>
+    </mxCell>
+    <mxCell id="idle" value="idle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1" vertex="1" parent="1">
+      <mxGeometry x="750" y="300" width="150" height="56" as="geometry"/>
+    </mxCell>
+    <mxCell id="terminated" value="terminated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;strokeWidth=2" vertex="1" parent="1">
+      <mxGeometry x="1050" y="300" width="150" height="56" as="geometry"/>
+    </mxCell>
+    <mxCell id="e1" value="创建会话：初始态即 rescheduling（session.created）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="start" target="rescheduling">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e2" value="被 kick：首条 message.user 或 POST /run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="rescheduling" target="running">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e3" value="turn 停车 → 写 stop_reason：end_turn ｜ requires_action ｜ retries_exhausted" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="running" target="idle">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e4" value="新 message.user / POST /run 再次 kick（requires_action 靠你回复恢复）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0.25;exitY=0;entryX=0.75;entryY=0;" edge="1" parent="1" source="idle" target="running">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="788" y="220"/>
+          <mxPoint x="563" y="220"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e5" value="OutcomeContinue：派发工具 → 下一个 Step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="running" target="running">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="525" y="258"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e6" value="操作员" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;dashed=1;exitX=0.5;exitY=1;entryX=0.25;entryY=1;" edge="1" parent="1" source="rescheduling" target="terminated">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="225" y="440"/>
+          <mxPoint x="1088" y="440"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e7" value="POST /transitions" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="running" target="terminated">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="525" y="470"/>
+          <mxPoint x="1125" y="470"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;dashed=1;exitX=0.5;exitY=1;entryX=0.75;entryY=1;" edge="1" parent="1" source="idle" target="terminated">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="825" y="440"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="note1" value="你那两个 rescheduling 会话：事件流里只有 session.created，从未被 kick（没发过消息），所以一直停在初始态。" style="shape=note;whiteSpace=wrap;html=1;size=16;fillColor=#fff2cc;strokeColor=#d6b656;align=left;fontSize=11;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="60" y="60" width="300" height="90" as="geometry"/>
+    </mxCell>
+    <mxCell id="note2" value="stop_reason 记在 idle 会话上：end_turn=完成；requires_action=等你回复；retries_exhausted=模型重试耗尽。terminated 是终态，Step 拒绝推进。" style="shape=note;whiteSpace=wrap;html=1;size=16;fillColor=#fff2cc;strokeColor=#d6b656;align=left;fontSize=11;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="620" y="60" width="330" height="90" as="geometry"/>
+    </mxCell>
+    <mxCell id="note3" value="崩溃恢复：进程重启后 runner 直接重跑 running 会话（不重复迁移）；但没人扫描遗留的 rescheduling。" style="shape=note;whiteSpace=wrap;html=1;size=16;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;fontSize=11;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1000" y="60" width="300" height="90" as="geometry"/>
+    </mxCell>
+  </root>
+</mxGraphModel>

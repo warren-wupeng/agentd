@@ -52,7 +52,7 @@ Session ─────────┘    ├── Resources (files, git repos)
 2. **The runtime is replaceable.** The default loop speaks the Anthropic API behind a `ModelProvider` interface — and the loop itself sits behind a `Harness` interface (ADR-004): Claude Code, OpenCode, or your own runtime can execute a session. Bring any model, any harness.
 3. **Credentials never enter the sandbox.** MCP and git calls route through a control-plane proxy that injects tokens from the vault (AES-256-GCM at rest, write-only over the API). If agent-written code inside the sandbox can read your secret, the design has failed.
 4. **Sandboxes are someone else's hard problem — on purpose.** We don't reinvent microVM orchestration. E2B (Firecracker) for production isolation, Docker+gVisor for cheap dev, your own infra via the `SandboxProvider` interface.
-5. **Durable by default.** Sessions survive orchestrator restarts: `rescheduling → running ↔ idle → terminated`, with explicit `stop_reason` semantics (`requires_action` vs `end_turn` vs `retries_exhausted`) so clients can tell "waiting on you" from "done".
+5. **Durable by default.** Sessions survive orchestrator restarts: born `idle`, kicked to `running` by work (`idle → running ⇄ idle`, park at `terminated`), with explicit `stop_reason` semantics (`requires_action` vs `end_turn` vs `retries_exhausted`) so clients can tell "waiting on you" from "done". `rescheduling` is the transient kick-in-flight state, never a resting place.
 6. **Boring technology.** Postgres for the event store, SSE for streaming, containers for isolation. No custom consensus, no new protocols.
 
 ## Platform capabilities (designed, not yet built)
