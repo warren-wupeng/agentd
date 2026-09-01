@@ -32,6 +32,7 @@ function proxy(req, res) {
     }
   );
   upstream.on("error", (err) => {
+    if (res.headersSent) { res.end(); return; } // e.g. a live SSE stream broke mid-flight
     res.writeHead(502, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: { code: "BAD_GATEWAY", message: String(err), remediation: "is the Go API running at " + AGENTD_URL + "?" } }));
   });

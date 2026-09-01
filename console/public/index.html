@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,68 +7,46 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header>
-  <h1>agentd</h1>
-  <span class="sub">harness-agnostic managed agents</span>
-  <nav>
-    <button data-tab="agents" class="active">Agents</button>
-    <button data-tab="session">Session</button>
-    <button data-tab="workflow">Workflow</button>
-  </nav>
-</header>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">a</div>
+      <div class="brand-text">
+        <div class="brand-name">agentd</div>
+        <div class="brand-sub">managed agents</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#/overview" data-route="/overview">
+        <svg viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg>
+        概览
+      </a>
+      <a href="#/agents" data-route="/agents">
+        <svg viewBox="0 0 16 16"><rect x="2.5" y="4" width="11" height="8.5" rx="2"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="8" r="1"/><path d="M8 4V1.8"/><circle cx="8" cy="1.5" r="0.9"/></svg>
+        Agents
+      </a>
+      <a href="#/sessions" data-route="/sessions">
+        <svg viewBox="0 0 16 16"><path d="M2.5 3.5h11a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H8l-3 3v-3H2.5A1.5 1.5 0 0 1 1 10V5a1.5 1.5 0 0 1 1.5-1.5z"/></svg>
+        会话
+      </a>
+      <a href="#/workflows" data-route="/workflows">
+        <svg viewBox="0 0 16 16"><rect x="5.5" y="1.5" width="5" height="3.6" rx="1"/><rect x="1.5" y="10.5" width="5" height="3.6" rx="1"/><rect x="9.5" y="10.5" width="5" height="3.6" rx="1"/><path d="M8 5.1v2.4M4 10.5V8.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/></svg>
+        Workflows
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="conn" id="conn">
+        <span class="dot" id="conn-dot"></span>
+        <span id="conn-text">连接中…</span>
+      </div>
+      <div class="foot-meta">agentd · pre-alpha</div>
+    </div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
 
-<main>
-  <section id="tab-agents" class="tab">
-    <div class="panel">
-      <h2>Create agent</h2>
-      <form id="agent-form">
-        <label>name <input name="name" required placeholder="coder"></label>
-        <label>model <input name="model" required placeholder="google/gemini-3.5-flash"></label>
-        <label>system prompt <textarea name="system_prompt" rows="3" placeholder="You are a careful coding agent..."></textarea></label>
-        <button type="submit">Create</button>
-      </form>
-    </div>
-    <div class="panel">
-      <h2>Agents</h2>
-      <table id="agents-table">
-        <thead><tr><th>name</th><th>id</th><th>latest</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section id="tab-session" class="tab" hidden>
-    <div class="panel">
-      <h2>Session</h2>
-      <select id="session-select"></select>
-      <button id="session-new">new session (latest agent)</button>
-      <form id="message-form">
-        <input name="text" placeholder="send a message..." required>
-        <button type="submit">Send</button>
-      </form>
-      <div class="state" id="session-state"></div>
-    </div>
-    <div class="panel log-panel">
-      <h2>Event stream <span class="hint">live (SSE) — log frames carry the reconnect cursor</span></h2>
-      <pre id="session-log"></pre>
-    </div>
-  </section>
-
-  <section id="tab-workflow" class="tab" hidden>
-    <div class="panel">
-      <h2>Run software-dev</h2>
-      <p class="hint">coder → (reviewer ∥ tester) → merger — spec in, merged artifact out.</p>
-      <label>agent <select id="wf-agent"></select></label>
-      <label>spec <textarea id="wf-spec" rows="5" placeholder="Write a Python function fib(n) (iterative) in solution.py..."></textarea></label>
-      <button id="wf-run">Run workflow</button>
-      <div id="wf-status"></div>
-    </div>
-    <div class="panel">
-      <h2>Node board</h2>
-      <div id="wf-nodes" class="nodes"></div>
-    </div>
-  </section>
-</main>
+<div class="modal-root" id="modal-root"></div>
+<div class="toast-root" id="toast-root"></div>
 
 <script src="/app.js"></script>
 </body>

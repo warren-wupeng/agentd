@@ -100,6 +100,7 @@ func NewHandler(st *store.Store, opts ...Option) http.Handler {
 	mux.HandleFunc("POST /v1/sessions/{id}/mcp/{server}", h.mcpProxy)
 
 	mux.HandleFunc("POST /v1/workflows", h.startWorkflow)
+	mux.HandleFunc("GET /v1/workflows", h.listWorkflows)
 	mux.HandleFunc("GET /v1/workflows/{id}", h.getWorkflow)
 
 	return requestLogger(mux)

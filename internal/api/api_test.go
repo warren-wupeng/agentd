@@ -2,9 +2,11 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,7 +14,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warren-wupeng/agentd/internal/api"
+	"github.com/warren-wupeng/agentd/internal/harness"
+	"github.com/warren-wupeng/agentd/internal/sandbox"
+	"github.com/warren-wupeng/agentd/internal/store"
 	"github.com/warren-wupeng/agentd/internal/testutil"
+	"github.com/warren-wupeng/agentd/internal/workflow"
 )
 
 type server struct {
@@ -24,10 +30,21 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 
 func newServer(t *testing.T, opts ...api.Option) *server {
 	t.Helper()
+	_, srv := newServerWithStore(t, opts...)
+	return srv
+}
+
+func newServerWithStore(t *testing.T, opts ...api.Option) (*storeFixture, *server) {
+	t.Helper()
 	st := testutil.NewStore(t)
 	ts := httptest.NewServer(api.NewHandler(st, opts...))
 	t.Cleanup(ts.Close)
-	return &server{t: t, ts: ts}
+	return &storeFixture{store: st, databaseURL: testutil.DatabaseURL(t)}, &server{t: t, ts: ts}
+}
+
+type storeFixture struct {
+	store       *store.Store
+	databaseURL string
 }
 
 // recordingRunner is an api.Runner that records kicks instead of running
@@ -150,6 +167,39 @@ func TestAgentVersioningOverHTTP(t *testing.T) {
 	}
 }
 
+func newWorkflowOption(t *testing.T, st *store.Store, databaseURL string) api.Option {
+	t.Helper()
+	sb, err := sandbox.NewExec(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := workflow.NewExecutor(context.Background(), databaseURL, st, sb, slog.Default(), stubHarness{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ex.Close() })
+	return api.WithWorkflow(ex)
+}
+
+// stubHarness satisfies the Harness interface for tests that only wire
+// the executor (workflow list endpoint) and never launch a node. Real
+// execution paths are covered by workflow_test via harness.NewNative.
+type stubHarness struct{}
+
+func (stubHarness) Name() string                        { return "native" }
+func (stubHarness) Capabilities() harness.CapabilitySet { return harness.CapabilitySet{} }
+func (stubHarness) Launch(_ context.Context, spec harness.WorkerSpec) (harness.Handle, error) {
+	return harness.Handle{Spec: spec}, nil
+}
+func (stubHarness) Run(_ context.Context, _ harness.Handle) error { return nil }
+func (stubHarness) Checkpoint(_ context.Context, _ harness.Handle) (harness.CheckpointToken, error) {
+	return harness.CheckpointToken{Harness: "native"}, nil
+}
+func (stubHarness) Resume(_ context.Context, spec harness.WorkerSpec, _ harness.CheckpointToken) (harness.Handle, error) {
+	return harness.Handle{Spec: spec}, nil
+}
+func (stubHarness) Interrupt(uuid.UUID) {}
+
 func TestDeleteAgentOverHTTP(t *testing.T) {
 	s := newServer(t)
 	id := s.mustCreateAgent("deletable", "m1")
@@ -175,6 +225,44 @@ func TestDeleteAgentOverHTTP(t *testing.T) {
 // TestReplay_SessionEventLog is the G4 replay test for the events endpoint:
 // kill the flow mid-run (here: replay from a mid-log cursor), reconnect,
 // and assert the client sees an ordered, lossless, idempotent history.
+func TestWorkflowListOverHTTP(t *testing.T) {
+	fixture, s := newServerWithStore(t)
+	s.ts.Config.Handler = api.NewHandler(fixture.store, newWorkflowOption(t, fixture.store, fixture.databaseURL))
+	a1 := s.mustCreateAgent("wf-a", "m1")
+	a2 := s.mustCreateAgent("wf-b", "m1")
+	defs := []string{
+		fmt.Sprintf(`{"name":"older","nodes":[{"id":"n1","agent":%q,"prompt":"do one"}]}`, a1),
+		fmt.Sprintf(`{"name":"newer","nodes":[{"id":"n2","agent":%q,"prompt":"do two"}]}`, a2),
+	}
+	for _, def := range defs {
+		code, resp := s.do("POST", "/v1/workflows", json.RawMessage(def))
+		if code != http.StatusAccepted {
+			t.Fatalf("start workflow: %d %v", code, resp)
+		}
+	}
+
+	code, resp := s.do("GET", "/v1/workflows?limit=1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list workflows: %d %v", code, resp)
+	}
+	runs := resp["runs"].([]any)
+	if len(runs) != 1 {
+		t.Fatalf("want 1 run, got %d", len(runs))
+	}
+	latest := runs[0].(map[string]any)
+	if latest["name"] != "newer" {
+		t.Fatalf("want newest workflow first, got %v", latest)
+	}
+	if latest["created_at"] == nil || latest["created_at"] == "" {
+		t.Fatalf("want created_at from server, got %v", latest)
+	}
+
+	code, resp = s.do("GET", "/v1/workflows?limit=0", nil)
+	if code != http.StatusBadRequest || resp["error"].(map[string]any)["remediation"] == "" {
+		t.Fatalf("want 400 with remediation for bad limit, got %d %v", code, resp)
+	}
+}
+
 func TestReplay_SessionEventLog(t *testing.T) {
 	s := newServer(t)
 	agentID := s.mustCreateAgent("replay-api", "m1")

@@ -3,6 +3,7 @@ package api
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/warren-wupeng/agentd/internal/agentderr"
 )
@@ -29,6 +30,31 @@ func (h *handler) startWorkflow(w http.ResponseWriter, r *http.Request) {
 		"run":  run,
 		"note": "poll GET /v1/workflows/{id} for node states",
 	})
+}
+
+func (h *handler) listWorkflows(w http.ResponseWriter, r *http.Request) {
+	if h.workflow == nil {
+		writeErr(w, agenterr503())
+		return
+	}
+	limit := 20
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeErr(w, agentderr.InvalidInput("limit must be a positive integer", "use a small value like 20 or 50"))
+			return
+		}
+		if n > 100 {
+			n = 100
+		}
+		limit = n
+	}
+	runs, err := h.workflow.List(r.Context(), limit, nil)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }
 
 func (h *handler) getWorkflow(w http.ResponseWriter, r *http.Request) {

@@ -45,9 +45,13 @@ resumable in principle because every node IS a durable session
    container-worker scheduling, behind the same definition.
 6. **`console/`**: zero-dependency Node.js server (http + static files,
    no build step — the boring philosophy applies to consoles too) +
-   vanilla JS frontend: agents list/create, session live view (SSE log
-   frames + deltas), workflow runner with a node status board. Talks to
-   the Go API directly; no BFF logic beyond static serving.
+   vanilla JS frontend: sidebar + hash routing, overview stats/recent
+   sessions, agent cards with create modal and inline version history,
+   chat-style session view (user/assistant bubbles, collapsible tool
+   cards, transient delta typing bubble, composer disabled while a run
+   is active), workflow runner with DAG visualization and session
+   drill-down. Talks to the Go API through the console's own `/api`
+   reverse proxy so static serving and SSE stay same-origin.
 
 ## Tests
 
@@ -100,7 +104,8 @@ resumable in principle because every node IS a durable session
   /v1/workflows. CLI: workflow / workflow-status. The software-dev
   template. Console: zero-dep Node.js server (static + streaming
   /api proxy so SSE flows and no CORS exists) + vanilla JS frontend
-  (agents, live session view with SSE, workflow node board).
+  with sidebar hash routing, overview, agent cards/modal/version
+  history, chat-style session transcript, and workflow DAG board.
 - 2026-08-31: **Done-when, twice**. Mechanically:
   TestDoneWhen_SoftwareDevFlow — pipelineModel plays all four roles;
   dependency order asserted from event timestamps; PARALLELISM proven
