@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 bin/
 compose.override.yml
+.env
