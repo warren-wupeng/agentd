@@ -120,7 +120,7 @@ func (e *Executor) List(ctx context.Context, limit int, id *uuid.UUID) ([]*Run, 
 	args = append(args, limit)
 	rows, err := e.pool.Query(ctx,
 		`SELECT id, name, status, created_at, definition, node_states FROM workflow_runs`+where+
-		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, len(args)), args...)
+			fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return nil, agentderr.Internal(err)
 	}

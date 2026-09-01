@@ -38,7 +38,7 @@ func (h *handler) listWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := 20
-		if raw := r.URL.Query().Get("limit"); raw != "" {
+	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n <= 0 {
 			writeErr(w, agentderr.InvalidInput("limit must be a positive integer", "use a small value like 20 or 50"))

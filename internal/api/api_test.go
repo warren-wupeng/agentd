@@ -173,13 +173,32 @@ func newWorkflowOption(t *testing.T, st *store.Store, databaseURL string) api.Op
 	if err != nil {
 		t.Fatal(err)
 	}
-	ex, err := workflow.NewExecutor(context.Background(), databaseURL, st, sb, slog.Default(), harness.NewStub("native"))
+	ex, err := workflow.NewExecutor(context.Background(), databaseURL, st, sb, slog.Default(), stubHarness{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ex.Close() })
 	return api.WithWorkflow(ex)
 }
+
+// stubHarness satisfies the Harness interface for tests that only wire
+// the executor (workflow list endpoint) and never launch a node. Real
+// execution paths are covered by workflow_test via harness.NewNative.
+type stubHarness struct{}
+
+func (stubHarness) Name() string                        { return "native" }
+func (stubHarness) Capabilities() harness.CapabilitySet { return harness.CapabilitySet{} }
+func (stubHarness) Launch(_ context.Context, spec harness.WorkerSpec) (harness.Handle, error) {
+	return harness.Handle{Spec: spec}, nil
+}
+func (stubHarness) Run(_ context.Context, _ harness.Handle) error { return nil }
+func (stubHarness) Checkpoint(_ context.Context, _ harness.Handle) (harness.CheckpointToken, error) {
+	return harness.CheckpointToken{Harness: "native"}, nil
+}
+func (stubHarness) Resume(_ context.Context, spec harness.WorkerSpec, _ harness.CheckpointToken) (harness.Handle, error) {
+	return harness.Handle{Spec: spec}, nil
+}
+func (stubHarness) Interrupt(uuid.UUID) {}
 
 func TestDeleteAgentOverHTTP(t *testing.T) {
 	s := newServer(t)
