@@ -54,7 +54,7 @@ Environment (template) ─▶ Container（工具执行工作区：bash/文件/�
 - **Context compaction**：接近上下文上限时服务端自动压缩历史（`agent.thread_context_compacted` 事件）
 - **Prompt caching**：历史前缀自动缓存
 - **Extended thinking**：默认开
-- **Session 状态机**：`rescheduling → running ↔ idle → terminated`，可重试错误自动重新调度
+- **Session 状态机**：会话 born `idle`，有工作时进入 `running`，在 `running ⇄ idle` 间往返并最终 `terminated`；`rescheduling` 只表示 kick 在途的瞬时态，kick 扑空时会诚实停回 `idle`，可重试错误再重新调度
 - **Webhooks**：thin payload（只有类型 + 资源 ID）+ HMAC 签名 + 重试去重，免轮询
 - **Permission policies**：`always_allow` / `always_ask`（后者把 tool call 挂起等客户端确认）
 - **限流**：控制面按 org RPM 限速（创建 300 RPM、其他 600 RPM、环境 60 RPM / 5 并发）
@@ -136,7 +136,7 @@ Environment (template) ─▶ Container（工具执行工作区：bash/文件/�
 - **事件表是 single source of truth**：SSE 流只是事件表的 tail 视图，断线重连 = 重放 + 去重
 - **凭证代理模式**：MCP/git 调用路由经 orchestrator 侧代理注入 token，沙箱内零 secret
 - **stream-first 约定**写进 SDK 而不是靠用户自觉
-- session 状态机照搬 `rescheduling → running ↔ idle → terminated` + `stop_reason`
+- session 状态机采用 born `idle` 的读法：`idle → running ⇄ idle → terminated` + `stop_reason`；`rescheduling` 仅保留为 kick 在途的瞬时态
 
 ### 3.3 MVP 范围（4-6 周，1-2 人）
 

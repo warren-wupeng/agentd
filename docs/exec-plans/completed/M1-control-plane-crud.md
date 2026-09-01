@@ -36,9 +36,12 @@ framework), log/slog. Boring on purpose.
    `GET /v1/sessions/{id}/events?after_seq=N&limit=M` (replay).
    *Accepts:* replay test — 50 events, read from seq 20, strictly ordered,
    idempotent re-reads; `processed_at` set via separate claim endpoint.
-7. **Session state machine.** `rescheduling → running ↔ idle → terminated`
-   as a column updated only inside G1 tx functions, with
-   `session.state_changed` events.
+7. **Session state machine.** Sessions are born `idle`; active work drives
+   `idle → running ⇄ idle`, parks at `terminated`, and reserves
+   `rescheduling` for the transient kick-in-flight state (including the
+   honest `rescheduling → idle` park when a kick finds nothing to do), all as
+   a column updated only inside G1 tx functions with `session.state_changed`
+   events.
    *Accepts:* structural test — every observed state value has a matching
    event; invalid transitions rejected.
 8. **CI.** GitHub Actions: `go test ./...` (tests boot their own embedded
